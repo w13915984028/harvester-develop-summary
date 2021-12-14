@@ -7,7 +7,7 @@ https://github.com/harvester/harvester
 https://github.com/harvester/harvester/wiki/Harvester-Development-Overview
 https://github.com/harvester/harvester/wiki/Setting-Up-Harvester-Development-Environment
 
-When you have no GoLand, or feel it complex, no wrroy.
+When you have no GoLand, or feel it complex, no worry.
 
 
 3. Be familiar with main PODs of Harvester
