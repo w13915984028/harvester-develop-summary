@@ -94,7 +94,8 @@ NAMESPACE                  NAME                                          TYPE   
 kube-system                ingress-expose                                LoadBalancer   10.53.200.67    192.168.3.80   443:32661/TCP,80:31834/TCP     3h6m
 ...
 ```
-notice the 443->32661 mapping
+notice the 443:32661 mapping
+it is variable in each run
 
 
 if need to see debug message, add "--debug" to the program
