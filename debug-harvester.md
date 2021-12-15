@@ -164,6 +164,22 @@ Harvester-webhook follows general rule of K8S webhook, it works tightly with K8s
 
 We will build docker image and apply it in Harvester.
 
+0. make harvester-webhook binary
+```
+execute "make build" 
+rancher@rancherserver1:~/source_code/harvester$ make build
+
+cp bin/harvester-webhook package/
+```
+
+Notice: In my practice, the local GO directly built harvester-webhook binary is not working with the following docker image.
+
+
+```
+go build -ldflags "-extldflags -static -s"  -o ./bin/harvester-webhook ./cmd/webhook/main.go
+./bin/harvester-webhook may run in local Linux, but not run in following docker image.  Reason is unknown. TBD.
+```
+
 
 1. build docker image
 ```
@@ -336,6 +352,8 @@ kubectl logs deployment/harvester-webhook -n harvester-system
 with the "--debug" enabled in locally build docker image, you will get a lot of useful information for debug.
 
 
-Notice, when "kube scale"
-Stop Harvester first, then Harvester-webhook
-Start Harvester-webhook first, then Harvester (may be local running program)
+Notice, when doing "kube scale":
+```
+Stop harvester first, then startharvester-webhook
+Start harvester-webhook first, then start harvester deploy / local running binary
+```
