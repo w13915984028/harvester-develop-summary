@@ -158,13 +158,15 @@ run it like  (the harv_main could be any name you like)
 
 
 **Develop Harvester-webhook**
-A bit complex, the GO compiled bin can not run directly on you local Linux.
+```
+It is a bit complex, because the GO compiled bin can not run directly on you local Linux.
 
-Harvester-webhook follows general rule of K8S webhook, it works tightly with K8s components, within K8s cluster network. It is not easy to let it run locally.
+Harvester-webhook follows general rule of K8S webhook, works tightly with K8s components within K8s cluster network. It is not easy to let it run locally.
 
+```
 We will build docker image and apply it in Harvester.
 
-0. make harvester-webhook binary
+0. make ```harvester-webhook``` binary
 ```
 execute "make build" 
 rancher@rancherserver1:~/source_code/harvester$ make build
@@ -300,7 +302,7 @@ rancher@rancherserver1:~/source_code/harvester/package$
 
 4.
 At this moment, at least, the harvester-webhook docker image can run, and the bin harvester-webhook can also run.
-This can save you a big amount of time if you try to verify them in the cluster, in case any errors.
+This can save you some time if you try to verify them in the cluster, in case any errors.
 
 
 5. save and zip (optional) the image:
