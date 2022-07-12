@@ -9,6 +9,8 @@ https://github.com/harvester/harvester/issues/2245
 
 https://github.com/rancher/fleet/issues/760
 
+https://github.com/rancher/rancher/issues/38035 (The best solution is that the `Rancher` framework solves it)
+
 ## Reproduce steps
 
 After investation, a stable reproducing operations are as following (there could be more):
@@ -417,16 +419,56 @@ func (h *handler) MonitorBundle(bd *fleet.BundleDeployment, status fleet.BundleD
   st1 := status.DeepCopy()
 
 	deploymentStatus, err := h.deployManager.MonitorBundle(bd)
-..
+	..
 
 	status.NonReadyStatus = deploymentStatus.NonReadyStatus
-..
+	..
 
-  removeStatusPrivateField(&status) // remove the private field
+	removeStatusPrivateField(&status) // remove the private field
 
 	return status, nil
 }
 ```
+
+Manually make container image and replace it:
+
+```
+(0) git clone fleet-agent source code, modify with the workaround, commit, note the commit id
+git clone https://github.com/rancher/fleet.git
+
+edit:
+modules/agent/pkg/controllers/bundledeployment/controller.go
+
+(1) make
+
+(3) in your local docker, `docker image ls | grep commit id (first 7 digits)`
+
+(4) save&transfer docker image to each of your Harvester NODE
+export ver=1
+export commitID=ac3869b-amd64 (e.g.)
+docker save -o fleet-agent-dev.$ver.img rancher/fleet-agent:$commitID
+
+// copy image to Harvester NODE
+scp fleet-agent-dev.$ver.img rancher@192.168.122.99://home/rancher
+
+
+(5) in each Harvester NODE, load image
+export ver=1
+docker image load -i /home/rancher/fleet-agent-dev.$ver.img
+
+
+(6) kubectl replace image
+export commitID=ac3869b-amd64
+kubectl set image pod fleet-agent-57497ff7dc-h24sw -n cattle-fleet-local-system *=rancher/fleet-agent:$commitID
+
+
+(7) revert
+kubectl delete pod fleet-agent-57497ff7dc-h24sw
+
+The the POD will be replaced with the original image.
+
+```
+
 
 ## Open questions
 
