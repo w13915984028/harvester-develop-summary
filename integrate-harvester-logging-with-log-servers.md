@@ -103,8 +103,7 @@ prepare the `admin` user password for login into graylog dashboard
 $ echo -n ROOT_PASSWORDa1 | sha256sum
 899e9793de44cbb14f48b4fce810de122093d03705c0971752a5c15b0fa1ae03  -
 
-
-[note] for test syslog, we also add 12202 port mapping; when you test more protocols, more port mappings are needed.
+[note] It's important to add required `udp port` into parameters when lunching `graylog` container. `Docker` defaults to allow `container->internet` access, but not vice versa. The `port mapping` will allow `internet->container` access, `fluentd` output requires it. Following example, the `udp 12202 port` is mapped.
 
 ```
 docker run --name graylog --link mongo --link elasticsearch -p 9000:9000 -p 12201:12201 -p 1514:1514 -p 5555:5555 -p 12202:12202 -p 12202:12202/udp -e GRAYLOG_PASSWORD_SECRET="Graypass3WordMor!e" -e GRAYLOG_ROOT_PASSWORD_SHA2=899e9793de44cbb14f48b4fce810de122093d03705c0971752a5c15b0fa1ae03   -e GRAYLOG_HTTP_EXTERNAL_URI="http://127.0.0.1:9000/"  -d graylog/graylog:4.3.5
@@ -112,6 +111,11 @@ docker run --name graylog --link mongo --link elasticsearch -p 9000:9000 -p 1220
 
 Normally, you can access: `http://<your server ip>:9000`  with username `admin`, password `ROOT_PASSWORDa1` now.
 
+
+When you need to add more `port` mapping, the quick way is to stop&delete current docker container, and deploy a new one.
+
+
+[If you faile to stop graylog container](#stop-docker-container-fail)
 
 ##### add inputs
 
@@ -342,7 +346,7 @@ We are not able to change default log level to `warning`.
 
 ### troubleshooting
 
-enable docker events
+#### enable docker events
 
 `docker events &`
 
@@ -371,53 +375,24 @@ com.github.joschi.jadconfig.ValidationException: Parameter password_secret shoul
 	at org.graylog2.bootstrap.Main.main(Main.java:45) [graylog.jar:?]
 ```
 
-
-## test with http log server
-
-### setup http based clusteroutput
-
-e.g., the log server is at `http://192.168.122.159:8090`
+#### stop docker container fail
 
 ```
-cat << EOF > cf1.YAML
-apiVersion: logging.banzaicloud.io/v1beta1
-kind: ClusterFlow
-metadata:
-  name: "all-logs"
-  namespace: "cattle-logging-system"
-spec:
-  globalOutputRefs:
-    - "example-all"
-EOF
+$docker stop 69918df2e21f
 
-
-cat << EOF > co1.YAML
-apiVersion: logging.banzaicloud.io/v1beta1
-kind: ClusterOutput
-metadata:
-  name: "example-all"
-  namespace: "cattle-logging-system"
-spec:
-  http:
-    endpoint: "http://192.168.122.159:8090/"
-    open_timeout: 3
-    format:
-      type: "json"
-    buffer:
-      flush_interval: 10s
-EOF
-
-kubectl apply -f cf1.YAML
-kubectl apply -f co1.YAML
-
+Error response from daemon: cannot stop container: 69918df2e21f: permission denied
 ```
 
-### sample of recevied log
+This error maybe caused by `apparmor`, try to execute: `$ sudo aa-remove-unknown` .
+
+Then
 
 ```
-DATA RECEIVED:2022-08-09 15:22:13.681801
-
-b'{"stream":"stderr","logtag":"F","message":"{\\"level\\":\\"info\\",\\"ts\\":\\"2022-08-09T15:19:38.455Z\\",\\"caller\\":\\"mvcc/index.go:189\\",\\"msg\\":\\"compact tree index\\",\\"revision\\":3020235}","kubernetes":{"pod_name":"etcd-harv1","namespace_name":"kube-system","pod_id":"bbc40515-5cd5-4163-b1b3-43e673b2629f","labels":{"component":"etcd","tier":"control-plane"},"annotations":{"etcd.k3s.io/initial":"{\\"initial-advertise-peer-urls\\":\\"https://192.168.122.195:2380\\",\\"initial-cluster\\":\\"harv1-d4c9d830=https://192.168.122.195:2380\\",\\"initial-cluster-state\\":\\"new\\"}","kubernetes.io/config.hash":"4751f4c42196864a210307b53f87fb8b","kubernetes.io/config.mirror":"4751f4c42196864a210307b53f87fb8b","kubernetes.io/config.seen":"2022-07-20T20:12:55.987483665Z","kubernetes.io/config.source":"file","kubernetes.io/psp":"global-unrestricted-psp"},"host":"harv1","container_name":"etcd","docker_id":"1bb822da4a4b11a45dcac8a24f6c6a6ac92218bd125e5c6fb1ebf4499b54eae1","container_hash":"sha256:f346e2e50af47d2daa5dff383a594df1450534abbae695a3dc8ddb1b5de2b1d0","container_image":"docker.io/rancher/hardened-etcd:v3.4.18-k3s1-build20220118"}}\n{"stream":"stderr","logtag":"F","message":"{\\"level\\":\\"info\\",\\"ts\\":\\"2022-08-09T15:19:38.527Z\\",\\"caller\\":\\"mvcc/kvstore_compaction.go:56\\",\\"msg\\":\\"finished scheduled compaction\\",\\"compact-revision\\":3020235,\\"took\\":\\"71.255265ms\\"}","kubernetes":{"pod_name":"etcd-harv1","namespace_name":"kube-system","pod_id":"bbc40515-5cd5-4163-b1b3-43e673b2629f","labels":{"component":"etcd","tier":"control-plane"},"annotations":{"etcd.k3s.io/initial":"{\\"initial-advertise-peer-urls\\":\\"https://192.168.122.195:2380\\",\\"initial-cluster\\":\\"harv1-d4c9d830=https://192.168.122.195:2380\\",\\"initial-cluster-state\\":\\"new\\"}","kubernetes.io/config.hash":"4751f4c42196864a210307b53f87fb8b","kubernetes.io/config.mirror":"4751f4c42196864a210307b53f87fb8b","kubernetes.io/config.seen":"2022-07-20T20:12:55.987483665Z","kubernetes.io/config.source":"file","kubernetes.io/psp":"global-unrestricted-psp"},"host":"harv1","container_name":"etcd","docker_id":"1bb822da4a4b11a45dcac8a24f6c6a6ac92218bd125e5c6fb1ebf4499b54eae1","container_hash":"sha256:f346e2e50af47d2daa5dff383a594df1450534abbae695a3dc8ddb1b5de2b1d0","container_image":"docker.io/rancher/hardened-etcd:v3.4.18-k3s1-build20220118"}}\n'
-
-192.168.122.195:41055 - - [09/Aug/2022 15:22:13] "HTTP/1.1 POST /" - 200 OK
+$docker stop 69918df2e21f
+69918df2e21f
 ```
+
+## test with http webhook log server
+
+refer:  https://github.com/w13915984028/harvester-develop-summary/blob/main/test-log-event-audit-with-webhook-server.md
+
