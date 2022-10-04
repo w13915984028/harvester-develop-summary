@@ -1,0 +1,194 @@
+rancher@harv1:~/patch-99-custom> ./patch_99_custom_main.sh 
++ do_it
++ source ./patch_99_custom.sh
++ cp -f ./99_custom_v103.yaml ./99_custom_v103_11.yaml
++ patch_99_custom ./99_custom_v103_11.yaml ./99_custom_v103_11_tmp.yaml 1
++ SRC_FILE=./99_custom_v103_11.yaml
++ TEMP_FILE=./99_custom_v103_11_tmp.yaml
++ PATCH_SERVER_IN_CUSTOM=1
++ PATCH_KUBE_AUDIT_SUCCESS=0
++ PATCH_SERVER_SUCCESS=0
++ cp -f ./99_custom_v103_11.yaml ./99_custom_v103_11_tmp.yaml
++ patch_92_harvester_kube_audit_policy ./99_custom_v103_11_tmp.yaml
++ TARGET_FILE=./99_custom_v103_11_tmp.yaml
++ yq e '.stages.initramfs[0].files += [{"path": "/etc/rancher/rke2/config.yaml.d/92-harvester-kube-audit-policy.yaml", "permissions": 384, "owner": 0, "group": 0, "encoding": "", "ownerstring": "" }]' ./99_custom_v103_11_tmp.yaml -i
+++ yq e '.stages.initramfs[0].files[].path' ./99_custom_v103_11_tmp.yaml
+++ grep 92-harvester-kube-audit-policy.yaml -n
+++ sed -e 's/:.*//'
++ TARGET_INDEX=13
++ '[' -n 13 ']'
++ TARGET_INDEX=12
++ echo 'the file is at 12'
+the file is at 12
++ yq e '.stages.initramfs[0].files[12]' ./99_custom_v103_11_tmp.yaml
+path: /etc/rancher/rke2/config.yaml.d/92-harvester-kube-audit-policy.yaml
+permissions: 384
+owner: 0
+group: 0
+encoding: ""
+ownerstring: ""
+++ grep 'path: /etc/rancher/rke2/config.yaml.d/92-harvester-kube-audit-policy.yaml' ./99_custom_v103_11_tmp.yaml -n
+++ sed -e 's/:.*//'
++ LINE_NO=1874
++ '[' -n 1874 ']'
++ LINE_NO=1878
++ echo 'the target line numbert is 1878'
+the target line numbert is 1878
++ AUDIT_POLICY_FILE_CONTENT='\ \ \ \ \ \ \ \ \ \ content: |'
++ sed -i '1878i \ \ \ \ \ \ \ \ \ \ content: |' ./99_custom_v103_11_tmp.yaml
++ LINE_NO=1879
++ AUDIT_POLICY_FILE_CONTENT='\ \ \ \ \ \ \ \ \ \ \ \ apiVersion: audit.k8s.io/v1'
++ sed -i '1879i \ \ \ \ \ \ \ \ \ \ \ \ apiVersion: audit.k8s.io/v1' ./99_custom_v103_11_tmp.yaml
++ LINE_NO=1880
++ AUDIT_POLICY_FILE_CONTENT='\ \ \ \ \ \ \ \ \ \ \ \ kind: Policy'
++ sed -i '1880i \ \ \ \ \ \ \ \ \ \ \ \ kind: Policy' ./99_custom_v103_11_tmp.yaml
++ LINE_NO=1881
++ AUDIT_POLICY_FILE_CONTENT='\ \ \ \ \ \ \ \ \ \ \ \ omitStages:'
++ sed -i '1881i \ \ \ \ \ \ \ \ \ \ \ \ omitStages:' ./99_custom_v103_11_tmp.yaml
++ LINE_NO=1882
++ AUDIT_POLICY_FILE_CONTENT='\ \ \ \ \ \ \ \ \ \ \ \ \ \ - "ResponseStarted"'
++ sed -i '1882i \ \ \ \ \ \ \ \ \ \ \ \ \ \ - "ResponseStarted"' ./99_custom_v103_11_tmp.yaml
++ LINE_NO=1883
++ AUDIT_POLICY_FILE_CONTENT='\ \ \ \ \ \ \ \ \ \ \ \ \ \ - "ResponseComplete"'
++ sed -i '1883i \ \ \ \ \ \ \ \ \ \ \ \ \ \ - "ResponseComplete"' ./99_custom_v103_11_tmp.yaml
++ LINE_NO=1884
++ AUDIT_POLICY_FILE_CONTENT='\ \ \ \ \ \ \ \ \ \ \ \ rules:'
++ sed -i '1884i \ \ \ \ \ \ \ \ \ \ \ \ rules:' ./99_custom_v103_11_tmp.yaml
++ LINE_NO=1885
++ AUDIT_POLICY_FILE_CONTENT='\ \ \ \ \ \ \ \ \ \ \ \ \ \ # Any include/exclude rules are added here'
++ sed -i '1885i \ \ \ \ \ \ \ \ \ \ \ \ \ \ # Any include/exclude rules are added here' ./99_custom_v103_11_tmp.yaml
++ LINE_NO=1886
++ AUDIT_POLICY_FILE_CONTENT='\ \ \ \ \ \ \ \ \ \ \ \ \ \ # A catch-all rule to log all other (create/delete/patch) requests at the Metadata level'
++ sed -i '1886i \ \ \ \ \ \ \ \ \ \ \ \ \ \ # A catch-all rule to log all other (create/delete/patch) requests at the Metadata level' ./99_custom_v103_11_tmp.yaml
++ LINE_NO=1887
++ AUDIT_POLICY_FILE_CONTENT='\ \ \ \ \ \ \ \ \ \ \ \ \ \ - level: Metadata'
++ sed -i '1887i \ \ \ \ \ \ \ \ \ \ \ \ \ \ - level: Metadata' ./99_custom_v103_11_tmp.yaml
++ LINE_NO=1888
++ AUDIT_POLICY_FILE_CONTENT='\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ verbs: ["create", "delete", "patch"]'
++ sed -i '1888i \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ verbs: ["create", "delete", "patch"]' ./99_custom_v103_11_tmp.yaml
++ LINE_NO=1889
++ AUDIT_POLICY_FILE_CONTENT='\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ omitStages:'
++ sed -i '1889i \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ omitStages:' ./99_custom_v103_11_tmp.yaml
++ LINE_NO=1890
++ AUDIT_POLICY_FILE_CONTENT='\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ - "ResponseStarted"'
++ sed -i '1890i \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ - "ResponseStarted"' ./99_custom_v103_11_tmp.yaml
++ LINE_NO=1891
++ AUDIT_POLICY_FILE_CONTENT='\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ - "ResponseComplete"'
++ sed -i '1891i \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ - "ResponseComplete"' ./99_custom_v103_11_tmp.yaml
++ yq e '.stages.initramfs[0].files[12]' ./99_custom_v103_11_tmp.yaml
+path: /etc/rancher/rke2/config.yaml.d/92-harvester-kube-audit-policy.yaml
+permissions: 384
+owner: 0
+group: 0
+content: |
+  apiVersion: audit.k8s.io/v1
+  kind: Policy
+  omitStages:
+    - "ResponseStarted"
+    - "ResponseComplete"
+  rules:
+    # Any include/exclude rules are added here
+    # A catch-all rule to log all other (create/delete/patch) requests at the Metadata level
+    - level: Metadata
+      verbs: ["create", "delete", "patch"]
+      omitStages:
+        - "ResponseStarted"
+        - "ResponseComplete"
+encoding: ""
+ownerstring: ""
++ PATCH_KUBE_AUDIT_SUCCESS=1
++ test 1 -eq 0
++ test 1 -eq 1
++ patch_90_harvester_server ./99_custom_v103_11_tmp.yaml
++ TARGET_FILE=./99_custom_v103_11_tmp.yaml
+++ yq e '.stages.initramfs[0].files[].path' ./99_custom_v103_11_tmp.yaml
+++ grep 90-harvester-server.yaml -n
+++ sed -e 's/:.*//'
++ TARGET_INDEX=8
++ '[' -n 8 ']'
++ echo 8
+8
++ TARGET_INDEX=7
++ yq e '.stages.initramfs[0].files[7]' ./99_custom_v103_11_tmp.yaml
+path: /etc/rancher/rke2/config.yaml.d/90-harvester-server.yaml
+permissions: 384
+owner: 0
+group: 0
+content: |
+  cni: multus,canal
+  cluster-cidr: 10.52.0.0/16
+  service-cidr: 10.53.0.0/16
+  cluster-dns: 10.53.0.10
+  tls-san:
+    - 192.168.122.99
+encoding: ""
+ownerstring: ""
+++ grep tls-san: ./99_custom_v103_11_tmp.yaml -n
+++ sed -e 's/:.*//'
++ LINE_NO=1820
++ '[' -n 1820 ']'
++ LINE_NO=1822
++ echo 'the target line number is 1822'
+the target line number is 1822
++ AUDIT_POLICY_FILE_PARAM='\ \ \ \ \ \ \ \ \ \ \ \ audit-policy-file: /etc/rancher/rke2/config.yaml.d/92-harvester-kube-audit-policy.yaml'
++ sed -i '1822i \ \ \ \ \ \ \ \ \ \ \ \ audit-policy-file: /etc/rancher/rke2/config.yaml.d/92-harvester-kube-audit-policy.yaml' ./99_custom_v103_11_tmp.yaml
++ yq e '.stages.initramfs[0].files[7]' ./99_custom_v103_11_tmp.yaml
+path: /etc/rancher/rke2/config.yaml.d/90-harvester-server.yaml
+permissions: 384
+owner: 0
+group: 0
+content: |
+  cni: multus,canal
+  cluster-cidr: 10.52.0.0/16
+  service-cidr: 10.53.0.0/16
+  cluster-dns: 10.53.0.10
+  tls-san:
+    - 192.168.122.99
+  audit-policy-file: /etc/rancher/rke2/config.yaml.d/92-harvester-kube-audit-policy.yaml
+encoding: ""
+ownerstring: ""
++ PATCH_SERVER_SUCCESS=1
++ test 1 -eq 0
++ cat ./99_custom_v103_11_tmp.yaml
++ rm ./99_custom_v103_11_tmp.yaml
++ echo 'after patch, the related content in ./99_custom_v103_11.yaml'
+after patch, the related content in ./99_custom_v103_11.yaml
++ test 1 -eq 1
++ yq e '.stages.initramfs[0].files[] | select(.path== "/etc/rancher/rke2/config.yaml.d/90-harvester-server.yaml")' ./99_custom_v103_11.yaml
+path: /etc/rancher/rke2/config.yaml.d/90-harvester-server.yaml
+permissions: 384
+owner: 0
+group: 0
+content: |
+  cni: multus,canal
+  cluster-cidr: 10.52.0.0/16
+  service-cidr: 10.53.0.0/16
+  cluster-dns: 10.53.0.10
+  tls-san:
+    - 192.168.122.99
+  audit-policy-file: /etc/rancher/rke2/config.yaml.d/92-harvester-kube-audit-policy.yaml
+encoding: ""
+ownerstring: ""
++ yq e '.stages.initramfs[0].files[] | select(.path== "/etc/rancher/rke2/config.yaml.d/92-harvester-kube-audit-policy.yaml")' ./99_custom_v103_11.yaml
+path: /etc/rancher/rke2/config.yaml.d/92-harvester-kube-audit-policy.yaml
+permissions: 384
+owner: 0
+group: 0
+content: |
+  apiVersion: audit.k8s.io/v1
+  kind: Policy
+  omitStages:
+    - "ResponseStarted"
+    - "ResponseComplete"
+  rules:
+    # Any include/exclude rules are added here
+    # A catch-all rule to log all other (create/delete/patch) requests at the Metadata level
+    - level: Metadata
+      verbs: ["create", "delete", "patch"]
+      omitStages:
+        - "ResponseStarted"
+        - "ResponseComplete"
+encoding: ""
+ownerstring: ""
+rancher@harv1:~/patch-99-custom> 
+

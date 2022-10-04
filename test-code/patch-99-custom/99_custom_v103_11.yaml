@@ -1,0 +1,2036 @@
+name: Harvester Configuration
+stages:
+  initramfs:
+  - commands:
+    - sed -i 's/^NETCONFIG_DNS_STATIC_SERVERS.*/NETCONFIG_DNS_STATIC_SERVERS="192.168.3.1"/'
+      /etc/sysconfig/network/config
+    - rm -f /etc/sysconfig/network/ifroute-harvester-mgmt
+    files:
+    - path: /etc/rancher/rancherd/config.yaml
+      permissions: 384
+      owner: 0
+      group: 0
+      content: |
+        role: cluster-init
+        token: "rancher"
+        kubernetesVersion: v1.22.12+rke2r1
+        rancherVersion: v2.6.4-harvester3
+        rancherInstallerImage: rancher/system-agent-installer-rancher:v2.6.4-harvester3
+        labels:
+         - harvesterhci.io/managed=true
+      encoding: ""
+      ownerstring: ""
+    - path: /etc/rancher/rancherd/config.yaml.d/13-monitoring.yaml
+      permissions: 384
+      owner: 0
+      group: 0
+      content: |
+        resources:
+        - apiVersion: management.cattle.io/v3
+          kind: ManagedChart
+          metadata:
+            name: rancher-monitoring
+            namespace: fleet-local
+          spec:
+            chart: rancher-monitoring
+            releaseName: rancher-monitoring
+            version: 100.1.0+up19.0.3
+            defaultNamespace: cattle-monitoring-system
+            repoName: harvester-charts
+            diff:
+              comparePatches:
+                - apiVersion: admissionregistration.k8s.io/v1
+                  kind: ValidatingWebhookConfiguration
+                  name: rancher-monitoring-admission
+                  operations:
+                    - { "op": "remove", "path": "/webhooks" }
+                - apiVersion: admissionregistration.k8s.io/v1
+                  kind: MutatingWebhookConfiguration
+                  name: rancher-monitoring-admission
+                  operations:
+                    - { "op": "remove", "path": "/webhooks" }
+            targets:
+            - clusterName: local
+              clusterSelector:
+                matchExpressions:
+                - key: provisioning.cattle.io/unmanaged-system-agent
+                  operator: DoesNotExist
+            values:
+              alertmanager:
+                enabled: false
+              grafana:
+                persistence:
+                  enabled: true
+                  size: "10"
+                  storageClassName: longhorn
+                  type: pvc
+                  accessModes:
+                  - ReadWriteOnce
+              prometheus:
+                prometheusSpec:
+                  evaluationInterval: 1m
+                  resources:
+                    limits:
+                      cpu: 1000m
+                      memory: 2500Mi
+                    requests:
+                      cpu: 750m
+                      memory: 1750Mi
+                  retention: 5d
+                  retentionSize: 50GiB
+                  scrapeInterval: 1m
+                  storageSpec:
+                    volumeClaimTemplate:
+                      spec:
+                        accessModes:
+                        - ReadWriteOnce
+                        resources:
+                          requests:
+                            storage: 50Gi
+                        storageClassName: longhorn
+                        volumeMode: Filesystem
+              prometheus-node-exporter:
+                resources:
+                  limits:
+                    cpu: 200m
+                    memory: 180Mi
+                  requests:
+                    cpu: 100m
+                    memory: 30Mi
+      encoding: ""
+      ownerstring: ""
+    - path: /etc/rancher/rancherd/config.yaml.d/20-harvester-settings.yaml
+      permissions: 384
+      owner: 0
+      group: 0
+      content: 'resources: []'
+      encoding: ""
+      ownerstring: ""
+    - path: /etc/rancher/rancherd/config.yaml.d/21-harvester-clusternetworks.yaml
+      permissions: 384
+      owner: 0
+      group: 0
+      content: 'resources: []'
+      encoding: ""
+      ownerstring: ""
+    - path: /etc/rancher/rancherd/config.yaml.d/12-monitoring-dashboard.yaml
+      permissions: 384
+      owner: 0
+      group: 0
+      content: |
+        resources:
+        # need to pre-load those VM monitoring dashboards, required to create the `cattle-dashboards` namespace upfront
+        # and keep those labels and annotations to avoid conflict from the operator
+        - apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: cattle-dashboards
+            # both annotations and labels are required to be pre-defined here, this is because the cattle-dashboards ns will be created by
+            # the monitoring helmChart, but we want to pre-loaded and retain those Harvester dashboards
+            # NOTE: the "mcc-" prefix is added by Rancher when installing the chart using ManagedChart.
+            annotations:
+              helm.sh/resource-policy: keep
+              meta.helm.sh/release-name: rancher-monitoring
+              meta.helm.sh/release-namespace: cattle-monitoring-system
+            labels:
+              app.kubernetes.io/managed-by: Helm
+              app.kubernetes.io/instance: rancher-monitoring
+              app.kubernetes.io/part-of: rancher-monitoring
+              kubernetes.io/metadata.name: cattle-dashboards
+              release: rancher-monitoring
+              name: cattle-dashboards
+              heritage: Helm
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            namespace: cattle-dashboards
+            name: harvester-vm-dashboard
+            labels:
+              # By default, Grafana is configured to watch all ConfigMaps with the grafana_dashboard label within the `cattle-dashboards` namespace.
+              grafana_dashboard: "1"
+          data:
+            harvester_vm_dashboard.json: |-
+              {
+                "annotations": {
+                  "list": [
+                    {
+                      "builtIn": 1,
+                      "datasource": "-- Grafana --",
+                      "enable": true,
+                      "hide": true,
+                      "iconColor": "rgba(0, 211, 255, 1)",
+                      "name": "Annotations & Alerts",
+                      "type": "dashboard"
+                    }
+                  ]
+                },
+                "editable": true,
+                "gnetId": null,
+                "graphTooltip": 0,
+                "iteration": 1632473428813,
+                "links": [],
+                "panels": [
+                  {
+                    "aliasColors": {},
+                    "bars": false,
+                    "dashLength": 10,
+                    "dashes": false,
+                    "datasource": null,
+                    "fieldConfig": {
+                      "defaults": {},
+                      "overrides": []
+                    },
+                    "fill": 1,
+                    "fillGradient": 0,
+                    "gridPos": {
+                      "h": 7,
+                      "w": 8,
+                      "x": 0,
+                      "y": 0
+                    },
+                    "hiddenSeries": false,
+                    "id": 4,
+                    "legend": {
+                      "avg": false,
+                      "current": false,
+                      "max": false,
+                      "min": false,
+                      "show": true,
+                      "total": false,
+                      "values": false
+                    },
+                    "lines": true,
+                    "linewidth": 1,
+                    "nullPointMode": "null as zero",
+                    "options": {
+                      "alertThreshold": true
+                    },
+                    "percentage": false,
+                    "pluginVersion": "7.5.8",
+                    "pointradius": 2,
+                    "points": false,
+                    "renderer": "flot",
+                    "seriesOverrides": [],
+                    "spaceLength": 10,
+                    "stack": true,
+                    "steppedLine": false,
+                    "targets": [
+                      {
+                        "expr": "topk(${count}, (avg(rate(kubevirt_vmi_vcpu_seconds[5m])) by (domain, name))) ",
+                        "instant": false,
+                        "interval": "",
+                        "legendFormat": "{{name}}",
+                        "refId": "A"
+                      }
+                    ],
+                    "thresholds": [],
+                    "timeFrom": null,
+                    "timeRegions": [],
+                    "timeShift": null,
+                    "title": "CPU Usage",
+                    "tooltip": {
+                      "shared": true,
+                      "sort": 0,
+                      "value_type": "individual"
+                    },
+                    "type": "graph",
+                    "xaxis": {
+                      "buckets": null,
+                      "mode": "time",
+                      "name": null,
+                      "show": true,
+                      "values": []
+                    },
+                    "yaxes": [
+                      {
+                        "$$hashKey": "object:370",
+                        "format": "percentunit",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      },
+                      {
+                        "$$hashKey": "object:371",
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      }
+                    ],
+                    "yaxis": {
+                      "align": false,
+                      "alignLevel": null
+                    }
+                  },
+                  {
+                    "aliasColors": {},
+                    "bars": false,
+                    "dashLength": 10,
+                    "dashes": false,
+                    "datasource": null,
+                    "fieldConfig": {
+                      "defaults": {},
+                      "overrides": []
+                    },
+                    "fill": 1,
+                    "fillGradient": 0,
+                    "gridPos": {
+                      "h": 7,
+                      "w": 8,
+                      "x": 8,
+                      "y": 0
+                    },
+                    "hiddenSeries": false,
+                    "id": 6,
+                    "legend": {
+                      "avg": false,
+                      "current": false,
+                      "max": false,
+                      "min": false,
+                      "show": true,
+                      "total": false,
+                      "values": false
+                    },
+                    "lines": true,
+                    "linewidth": 1,
+                    "nullPointMode": "null as zero",
+                    "options": {
+                      "alertThreshold": true
+                    },
+                    "percentage": false,
+                    "pluginVersion": "7.5.8",
+                    "pointradius": 2,
+                    "points": false,
+                    "renderer": "flot",
+                    "seriesOverrides": [],
+                    "spaceLength": 10,
+                    "stack": false,
+                    "steppedLine": false,
+                    "targets": [
+                      {
+                        "expr": "topk(${count}, ((kubevirt_vmi_memory_available_bytes - kubevirt_vmi_memory_unused_bytes) / kubevirt_vmi_memory_available_bytes))",
+                        "instant": false,
+                        "interval": "",
+                        "legendFormat": "{{name}}",
+                        "refId": "A"
+                      }
+                    ],
+                    "thresholds": [],
+                    "timeFrom": null,
+                    "timeRegions": [],
+                    "timeShift": null,
+                    "title": "Memory Usage",
+                    "tooltip": {
+                      "shared": true,
+                      "sort": 0,
+                      "value_type": "individual"
+                    },
+                    "type": "graph",
+                    "xaxis": {
+                      "buckets": null,
+                      "mode": "time",
+                      "name": null,
+                      "show": true,
+                      "values": []
+                    },
+                    "yaxes": [
+                      {
+                        "$$hashKey": "object:771",
+                        "format": "percentunit",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      },
+                      {
+                        "$$hashKey": "object:772",
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      }
+                    ],
+                    "yaxis": {
+                      "align": false,
+                      "alignLevel": null
+                    }
+                  },
+                  {
+                    "aliasColors": {},
+                    "bars": false,
+                    "dashLength": 10,
+                    "dashes": false,
+                    "datasource": null,
+                    "fieldConfig": {
+                      "defaults": {},
+                      "overrides": []
+                    },
+                    "fill": 1,
+                    "fillGradient": 0,
+                    "gridPos": {
+                      "h": 7,
+                      "w": 8,
+                      "x": 16,
+                      "y": 0
+                    },
+                    "hiddenSeries": false,
+                    "id": 2,
+                    "legend": {
+                      "alignAsTable": false,
+                      "avg": false,
+                      "current": false,
+                      "hideEmpty": false,
+                      "hideZero": true,
+                      "max": false,
+                      "min": false,
+                      "rightSide": false,
+                      "show": true,
+                      "sideWidth": null,
+                      "total": false,
+                      "values": false
+                    },
+                    "lines": true,
+                    "linewidth": 1,
+                    "nullPointMode": "null as zero",
+                    "options": {
+                      "alertThreshold": true
+                    },
+                    "percentage": false,
+                    "pluginVersion": "7.5.8",
+                    "pointradius": 2,
+                    "points": false,
+                    "renderer": "flot",
+                    "seriesOverrides": [],
+                    "spaceLength": 10,
+                    "stack": false,
+                    "steppedLine": false,
+                    "targets": [
+                      {
+                        "expr": "topk(${count}, (irate(kubevirt_vmi_storage_read_traffic_bytes_total[5m]))) ",
+                        "interval": "",
+                        "legendFormat": "{{name}}: {{drive}}",
+                        "refId": "A"
+                      }
+                    ],
+                    "thresholds": [],
+                    "timeFrom": null,
+                    "timeRegions": [],
+                    "timeShift": null,
+                    "title": "Storage Read Traffic Bytes",
+                    "tooltip": {
+                      "shared": true,
+                      "sort": 0,
+                      "value_type": "individual"
+                    },
+                    "type": "graph",
+                    "xaxis": {
+                      "buckets": null,
+                      "mode": "time",
+                      "name": null,
+                      "show": true,
+                      "values": []
+                    },
+                    "yaxes": [
+                      {
+                        "$$hashKey": "object:1285",
+                        "format": "Bps",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      },
+                      {
+                        "$$hashKey": "object:1286",
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      }
+                    ],
+                    "yaxis": {
+                      "align": false,
+                      "alignLevel": null
+                    }
+                  },
+                  {
+                    "aliasColors": {},
+                    "bars": false,
+                    "dashLength": 10,
+                    "dashes": false,
+                    "datasource": null,
+                    "fieldConfig": {
+                      "defaults": {},
+                      "overrides": []
+                    },
+                    "fill": 1,
+                    "fillGradient": 0,
+                    "gridPos": {
+                      "h": 7,
+                      "w": 8,
+                      "x": 0,
+                      "y": 7
+                    },
+                    "hiddenSeries": false,
+                    "id": 12,
+                    "legend": {
+                      "avg": false,
+                      "current": false,
+                      "hideEmpty": false,
+                      "hideZero": true,
+                      "max": false,
+                      "min": false,
+                      "show": true,
+                      "total": false,
+                      "values": false
+                    },
+                    "lines": true,
+                    "linewidth": 1,
+                    "nullPointMode": "null as zero",
+                    "options": {
+                      "alertThreshold": true
+                    },
+                    "percentage": false,
+                    "pluginVersion": "7.5.8",
+                    "pointradius": 2,
+                    "points": false,
+                    "renderer": "flot",
+                    "seriesOverrides": [],
+                    "spaceLength": 10,
+                    "stack": false,
+                    "steppedLine": false,
+                    "targets": [
+                      {
+                        "expr": "topk(${count}, (irate(kubevirt_vmi_storage_write_traffic_bytes_total[5m]))) ",
+                        "interval": "",
+                        "legendFormat": "{{name}}: {{drive}}",
+                        "refId": "A"
+                      }
+                    ],
+                    "thresholds": [],
+                    "timeFrom": null,
+                    "timeRegions": [],
+                    "timeShift": null,
+                    "title": "Storage Write Traffic Bytes",
+                    "tooltip": {
+                      "shared": true,
+                      "sort": 0,
+                      "value_type": "individual"
+                    },
+                    "type": "graph",
+                    "xaxis": {
+                      "buckets": null,
+                      "mode": "time",
+                      "name": null,
+                      "show": true,
+                      "values": []
+                    },
+                    "yaxes": [
+                      {
+                        "$$hashKey": "object:1613",
+                        "format": "Bps",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      },
+                      {
+                        "$$hashKey": "object:1614",
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      }
+                    ],
+                    "yaxis": {
+                      "align": false,
+                      "alignLevel": null
+                    }
+                  },
+                  {
+                    "aliasColors": {},
+                    "bars": false,
+                    "dashLength": 10,
+                    "dashes": false,
+                    "datasource": null,
+                    "fieldConfig": {
+                      "defaults": {},
+                      "overrides": []
+                    },
+                    "fill": 1,
+                    "fillGradient": 0,
+                    "gridPos": {
+                      "h": 7,
+                      "w": 8,
+                      "x": 8,
+                      "y": 7
+                    },
+                    "hiddenSeries": false,
+                    "id": 16,
+                    "legend": {
+                      "avg": false,
+                      "current": false,
+                      "hideEmpty": false,
+                      "max": false,
+                      "min": false,
+                      "show": true,
+                      "total": false,
+                      "values": false
+                    },
+                    "lines": true,
+                    "linewidth": 1,
+                    "nullPointMode": "null as zero",
+                    "options": {
+                      "alertThreshold": true
+                    },
+                    "percentage": false,
+                    "pluginVersion": "7.5.8",
+                    "pointradius": 2,
+                    "points": false,
+                    "renderer": "flot",
+                    "seriesOverrides": [],
+                    "spaceLength": 10,
+                    "stack": false,
+                    "steppedLine": false,
+                    "targets": [
+                      {
+                        "expr": "topk(${count}, (irate(kubevirt_vmi_network_receive_bytes_total[5m])*8))",
+                        "instant": false,
+                        "interval": "",
+                        "legendFormat": "{{name}}",
+                        "refId": "A"
+                      }
+                    ],
+                    "thresholds": [],
+                    "timeFrom": null,
+                    "timeRegions": [],
+                    "timeShift": null,
+                    "title": "Network Receive Bytes",
+                    "tooltip": {
+                      "shared": true,
+                      "sort": 0,
+                      "value_type": "individual"
+                    },
+                    "type": "graph",
+                    "xaxis": {
+                      "buckets": null,
+                      "mode": "time",
+                      "name": null,
+                      "show": true,
+                      "values": []
+                    },
+                    "yaxes": [
+                      {
+                        "$$hashKey": "object:2188",
+                        "format": "bps",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      },
+                      {
+                        "$$hashKey": "object:2189",
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      }
+                    ],
+                    "yaxis": {
+                      "align": false,
+                      "alignLevel": null
+                    }
+                  },
+                  {
+                    "aliasColors": {},
+                    "bars": false,
+                    "dashLength": 10,
+                    "dashes": false,
+                    "datasource": null,
+                    "fieldConfig": {
+                      "defaults": {},
+                      "overrides": []
+                    },
+                    "fill": 1,
+                    "fillGradient": 0,
+                    "gridPos": {
+                      "h": 7,
+                      "w": 8,
+                      "x": 16,
+                      "y": 7
+                    },
+                    "hiddenSeries": false,
+                    "id": 18,
+                    "legend": {
+                      "avg": false,
+                      "current": false,
+                      "max": false,
+                      "min": false,
+                      "show": true,
+                      "total": false,
+                      "values": false
+                    },
+                    "lines": true,
+                    "linewidth": 1,
+                    "nullPointMode": "null as zero",
+                    "options": {
+                      "alertThreshold": true
+                    },
+                    "percentage": false,
+                    "pluginVersion": "7.5.8",
+                    "pointradius": 2,
+                    "points": false,
+                    "renderer": "flot",
+                    "seriesOverrides": [],
+                    "spaceLength": 10,
+                    "stack": false,
+                    "steppedLine": false,
+                    "targets": [
+                      {
+                        "expr": "topk(${count}, (irate(kubevirt_vmi_network_transmit_bytes_total[5m])*8))",
+                        "interval": "",
+                        "legendFormat": "{{name}}",
+                        "refId": "A"
+                      }
+                    ],
+                    "thresholds": [],
+                    "timeFrom": null,
+                    "timeRegions": [],
+                    "timeShift": null,
+                    "title": "Network Transmit Bytes",
+                    "tooltip": {
+                      "shared": true,
+                      "sort": 0,
+                      "value_type": "individual"
+                    },
+                    "type": "graph",
+                    "xaxis": {
+                      "buckets": null,
+                      "mode": "time",
+                      "name": null,
+                      "show": true,
+                      "values": []
+                    },
+                    "yaxes": [
+                      {
+                        "$$hashKey": "object:2273",
+                        "format": "bps",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      },
+                      {
+                        "$$hashKey": "object:2274",
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      }
+                    ],
+                    "yaxis": {
+                      "align": false,
+                      "alignLevel": null
+                    }
+                  },
+                  {
+                    "datasource": null,
+                    "fieldConfig": {
+                      "defaults": {
+                        "decimals": 0,
+                        "mappings": [],
+                        "thresholds": {
+                          "mode": "percentage",
+                          "steps": [
+                            {
+                              "color": "green",
+                              "value": null
+                            },
+                            {
+                              "color": "#EAB839",
+                              "value": 65
+                            },
+                            {
+                              "color": "red",
+                              "value": 90
+                            }
+                          ]
+                        }
+                      },
+                      "overrides": []
+                    },
+                    "gridPos": {
+                      "h": 7,
+                      "w": 8,
+                      "x": 0,
+                      "y": 14
+                    },
+                    "id": 20,
+                    "options": {
+                      "displayMode": "gradient",
+                      "orientation": "horizontal",
+                      "reduceOptions": {
+                        "calcs": [
+                          "mean"
+                        ],
+                        "fields": "",
+                        "values": false
+                      },
+                      "showUnfilled": true,
+                      "text": {}
+                    },
+                    "pluginVersion": "7.5.8",
+                    "targets": [
+                      {
+                        "expr": "topk(${count}, (delta(kubevirt_vmi_network_receive_packets_total[2h])))",
+                        "instant": true,
+                        "interval": "",
+                        "legendFormat": "{{name}}",
+                        "refId": "A"
+                      }
+                    ],
+                    "timeFrom": null,
+                    "timeShift": null,
+                    "title": "Network Receive Packets (2h)",
+                    "type": "bargauge"
+                  },
+                  {
+                    "datasource": null,
+                    "fieldConfig": {
+                      "defaults": {
+                        "decimals": 0,
+                        "mappings": [],
+                        "thresholds": {
+                          "mode": "percentage",
+                          "steps": [
+                            {
+                              "color": "green",
+                              "value": null
+                            },
+                            {
+                              "color": "#EAB839",
+                              "value": 65
+                            },
+                            {
+                              "color": "red",
+                              "value": 90
+                            }
+                          ]
+                        }
+                      },
+                      "overrides": []
+                    },
+                    "gridPos": {
+                      "h": 7,
+                      "w": 8,
+                      "x": 8,
+                      "y": 14
+                    },
+                    "id": 22,
+                    "options": {
+                      "displayMode": "gradient",
+                      "orientation": "horizontal",
+                      "reduceOptions": {
+                        "calcs": [
+                          "mean"
+                        ],
+                        "fields": "",
+                        "values": false
+                      },
+                      "showUnfilled": true,
+                      "text": {}
+                    },
+                    "pluginVersion": "7.5.8",
+                    "targets": [
+                      {
+                        "expr": "topk(${count}, (delta(kubevirt_vmi_network_transmit_packets_total[2h])))",
+                        "instant": true,
+                        "interval": "",
+                        "legendFormat": "{{name}}",
+                        "refId": "A"
+                      }
+                    ],
+                    "timeFrom": null,
+                    "timeShift": null,
+                    "title": "Network Transmit Packets (2h)",
+                    "type": "bargauge"
+                  }
+                ],
+                "schemaVersion": 27,
+                "style": "dark",
+                "tags": [],
+                "templating": {
+                  "list": [
+                    {
+                      "allValue": null,
+                      "current": {
+                        "selected": true,
+                        "text": "10",
+                        "value": "10"
+                      },
+                      "description": null,
+                      "error": null,
+                      "hide": 0,
+                      "includeAll": false,
+                      "label": "count",
+                      "multi": false,
+                      "name": "count",
+                      "options": [
+                        {
+                          "selected": false,
+                          "text": "5",
+                          "value": "5"
+                        },
+                        {
+                          "selected": true,
+                          "text": "10",
+                          "value": "10"
+                        },
+                        {
+                          "selected": false,
+                          "text": "20",
+                          "value": "20"
+                        }
+                      ],
+                      "query": "5, 10, 20",
+                      "queryValue": "",
+                      "skipUrlSync": false,
+                      "type": "custom"
+                    }
+                  ]
+                },
+                "time": {
+                  "from": "now-30m",
+                  "to": "now"
+                },
+                "timepicker": {
+                  "refresh_intervals": [
+                    "5s",
+                    "10s",
+                    "30s",
+                    "1m",
+                    "5m",
+                    "15m",
+                    "30m",
+                    "1h",
+                    "2h",
+                    "1d"
+                  ]
+                },
+                "timezone": "",
+                "title": "Harvester VM Dashboard",
+                "uid": "harvester-vm-dashboard-1",
+                "version": 1
+              }
+
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            namespace: cattle-dashboards
+            name: harvester-vm-detail-dashboard
+            labels:
+              # By default, Grafana is configured to watch all ConfigMaps with the grafana_dashboard label within the `cattle-dashboards` namespace.
+              grafana_dashboard: "1"
+          data:
+            harvester_vm_info_details.json: |-
+              {
+                "annotations": {
+                  "list": [
+                    {
+                      "builtIn": 1,
+                      "datasource": "-- Grafana --",
+                      "enable": true,
+                      "hide": true,
+                      "iconColor": "rgba(0, 211, 255, 1)",
+                      "name": "Annotations & Alerts",
+                      "type": "dashboard"
+                    }
+                  ]
+                },
+                "description": "Harvester VM Info Detail",
+                "editable": true,
+                "gnetId": 11748,
+                "graphTooltip": 0,
+                "iteration": 1632474807858,
+                "links": [],
+                "panels": [
+                  {
+                    "datasource": null,
+                    "fieldConfig": {
+                      "defaults": {
+                        "decimals": 2,
+                        "mappings": [],
+                        "thresholds": {
+                          "mode": "percentage",
+                          "steps": [
+                            {
+                              "color": "green",
+                              "value": null
+                            },
+                            {
+                              "color": "#EAB839",
+                              "value": 65
+                            },
+                            {
+                              "color": "red",
+                              "value": 90
+                            }
+                          ]
+                        },
+                        "unit": "percentunit"
+                      },
+                      "overrides": []
+                    },
+                    "gridPos": {
+                      "h": 7,
+                      "w": 12,
+                      "x": 0,
+                      "y": 0
+                    },
+                    "id": 1,
+                    "interval": "",
+                    "links": [],
+                    "options": {
+                      "reduceOptions": {
+                        "calcs": [
+                          "mean"
+                        ],
+                        "fields": "",
+                        "values": false
+                      },
+                      "showThresholdLabels": false,
+                      "showThresholdMarkers": true,
+                      "text": {}
+                    },
+                    "pluginVersion": "7.5.8",
+                    "targets": [
+                      {
+                        "expr": "sum(avg(rate(kubevirt_vmi_vcpu_seconds{namespace=\"$namespace\", name=\"$vm\"}[5m])) by (domain, name))",
+                        "format": "time_series",
+                        "instant": false,
+                        "interval": "",
+                        "intervalFactor": 2,
+                        "legendFormat": "{{name}}",
+                        "legendLink": null,
+                        "refId": "A",
+                        "step": 10
+                      }
+                    ],
+                    "timeFrom": null,
+                    "timeShift": null,
+                    "title": "CPU Usage",
+                    "type": "gauge"
+                  },
+                  {
+                    "datasource": null,
+                    "fieldConfig": {
+                      "defaults": {
+                        "decimals": 2,
+                        "mappings": [],
+                        "thresholds": {
+                          "mode": "percentage",
+                          "steps": [
+                            {
+                              "color": "green",
+                              "value": null
+                            },
+                            {
+                              "color": "#EAB839",
+                              "value": 65
+                            },
+                            {
+                              "color": "red",
+                              "value": 90
+                            }
+                          ]
+                        },
+                        "unit": "percentunit"
+                      },
+                      "overrides": []
+                    },
+                    "gridPos": {
+                      "h": 7,
+                      "w": 12,
+                      "x": 12,
+                      "y": 0
+                    },
+                    "id": 3,
+                    "links": [],
+                    "options": {
+                      "reduceOptions": {
+                        "calcs": [
+                          "mean"
+                        ],
+                        "fields": "",
+                        "values": false
+                      },
+                      "showThresholdLabels": false,
+                      "showThresholdMarkers": true,
+                      "text": {}
+                    },
+                    "pluginVersion": "7.5.8",
+                    "targets": [
+                      {
+                        "expr": "sum((kubevirt_vmi_memory_available_bytes{namespace=\"$namespace\", name=\"$vm\"} -kubevirt_vmi_memory_unused_bytes{namespace=\"$namespace\", name=\"$vm\"})/kubevirt_vmi_memory_available_bytes{namespace=\"$namespace\", name=\"$vm\"})",
+                        "format": "time_series",
+                        "interval": "",
+                        "intervalFactor": 2,
+                        "legendFormat": "",
+                        "legendLink": null,
+                        "refId": "A",
+                        "step": 10
+                      }
+                    ],
+                    "timeFrom": null,
+                    "timeShift": null,
+                    "title": "Memory Usage",
+                    "type": "gauge"
+                  },
+                  {
+                    "aliasColors": {},
+                    "bars": false,
+                    "dashLength": 10,
+                    "dashes": false,
+                    "datasource": null,
+                    "fieldConfig": {
+                      "defaults": {},
+                      "overrides": []
+                    },
+                    "fill": 1,
+                    "fillGradient": 0,
+                    "gridPos": {
+                      "h": 7,
+                      "w": 8,
+                      "x": 0,
+                      "y": 7
+                    },
+                    "hiddenSeries": false,
+                    "id": 19,
+                    "legend": {
+                      "avg": false,
+                      "current": false,
+                      "max": false,
+                      "min": false,
+                      "show": false,
+                      "total": false,
+                      "values": false
+                    },
+                    "lines": true,
+                    "linewidth": 1,
+                    "links": [],
+                    "nullPointMode": "null as zero",
+                    "options": {
+                      "alertThreshold": true
+                    },
+                    "percentage": false,
+                    "pluginVersion": "7.5.8",
+                    "pointradius": 2,
+                    "points": false,
+                    "renderer": "flot",
+                    "seriesOverrides": [],
+                    "spaceLength": 10,
+                    "stack": false,
+                    "steppedLine": false,
+                    "targets": [
+                      {
+                        "expr": "irate(kubevirt_vmi_storage_read_traffic_bytes_total{namespace=\"$namespace\", name=\"$vm\"}[5m])",
+                        "format": "time_series",
+                        "interval": "",
+                        "intervalFactor": 1,
+                        "legendFormat": "{{drive}}-read",
+                        "refId": "A"
+                      },
+                      {
+                        "expr": "irate(kubevirt_vmi_storage_write_traffic_bytes_total{namespace=\"$namespace\", name=\"$vm\"}[5m])",
+                        "interval": "",
+                        "legendFormat": "{{drive}}-write",
+                        "refId": "B"
+                      }
+                    ],
+                    "thresholds": [],
+                    "timeFrom": null,
+                    "timeRegions": [],
+                    "timeShift": null,
+                    "title": "IO Traffic",
+                    "tooltip": {
+                      "shared": true,
+                      "sort": 0,
+                      "value_type": "individual"
+                    },
+                    "type": "graph",
+                    "xaxis": {
+                      "buckets": null,
+                      "mode": "time",
+                      "name": null,
+                      "show": true,
+                      "values": []
+                    },
+                    "yaxes": [
+                      {
+                        "$$hashKey": "object:304",
+                        "format": "Bps",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      },
+                      {
+                        "$$hashKey": "object:305",
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      }
+                    ],
+                    "yaxis": {
+                      "align": false,
+                      "alignLevel": null
+                    }
+                  },
+                  {
+                    "aliasColors": {},
+                    "bars": false,
+                    "dashLength": 10,
+                    "dashes": false,
+                    "datasource": null,
+                    "fieldConfig": {
+                      "defaults": {},
+                      "overrides": []
+                    },
+                    "fill": 1,
+                    "fillGradient": 0,
+                    "gridPos": {
+                      "h": 7,
+                      "w": 8,
+                      "x": 8,
+                      "y": 7
+                    },
+                    "hiddenSeries": false,
+                    "id": 20,
+                    "legend": {
+                      "alignAsTable": false,
+                      "avg": false,
+                      "current": false,
+                      "max": false,
+                      "min": false,
+                      "show": false,
+                      "total": false,
+                      "values": false
+                    },
+                    "lines": true,
+                    "linewidth": 1,
+                    "links": [],
+                    "nullPointMode": "null as zero",
+                    "options": {
+                      "alertThreshold": true
+                    },
+                    "percentage": false,
+                    "pluginVersion": "7.5.8",
+                    "pointradius": 2,
+                    "points": false,
+                    "renderer": "flot",
+                    "seriesOverrides": [],
+                    "spaceLength": 10,
+                    "stack": false,
+                    "steppedLine": false,
+                    "targets": [
+                      {
+                        "expr": "irate(kubevirt_vmi_storage_read_times_ms_total{namespace=\"$namespace\", name=\"$vm\"}[5m])",
+                        "format": "time_series",
+                        "interval": "",
+                        "intervalFactor": 1,
+                        "legendFormat": "{{drive}}-read",
+                        "refId": "A"
+                      },
+                      {
+                        "expr": "irate(kubevirt_vmi_storage_write_times_ms_total{namespace=\"$namespace\", name=\"$vm\"}[5m])",
+                        "interval": "",
+                        "legendFormat": "{{drive}}-write",
+                        "refId": "B"
+                      }
+                    ],
+                    "thresholds": [],
+                    "timeFrom": null,
+                    "timeRegions": [],
+                    "timeShift": null,
+                    "title": "IO Time",
+                    "tooltip": {
+                      "shared": true,
+                      "sort": 0,
+                      "value_type": "individual"
+                    },
+                    "type": "graph",
+                    "xaxis": {
+                      "buckets": null,
+                      "mode": "time",
+                      "name": null,
+                      "show": true,
+                      "values": []
+                    },
+                    "yaxes": [
+                      {
+                        "$$hashKey": "object:361",
+                        "format": "ms",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      },
+                      {
+                        "$$hashKey": "object:362",
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      }
+                    ],
+                    "yaxis": {
+                      "align": false,
+                      "alignLevel": null
+                    }
+                  },
+                  {
+                    "aliasColors": {},
+                    "bars": false,
+                    "dashLength": 10,
+                    "dashes": false,
+                    "datasource": null,
+                    "fieldConfig": {
+                      "defaults": {},
+                      "overrides": []
+                    },
+                    "fill": 1,
+                    "fillGradient": 0,
+                    "gridPos": {
+                      "h": 7,
+                      "w": 8,
+                      "x": 16,
+                      "y": 7
+                    },
+                    "hiddenSeries": false,
+                    "id": 15,
+                    "legend": {
+                      "avg": false,
+                      "current": false,
+                      "max": false,
+                      "min": false,
+                      "show": false,
+                      "total": false,
+                      "values": false
+                    },
+                    "lines": true,
+                    "linewidth": 1,
+                    "links": [],
+                    "nullPointMode": "null as zero",
+                    "options": {
+                      "alertThreshold": true
+                    },
+                    "percentage": false,
+                    "pluginVersion": "7.5.8",
+                    "pointradius": 2,
+                    "points": false,
+                    "renderer": "flot",
+                    "seriesOverrides": [],
+                    "spaceLength": 10,
+                    "stack": false,
+                    "steppedLine": false,
+                    "targets": [
+                      {
+                        "expr": "irate(kubevirt_vmi_storage_iops_read_total{namespace=\"$namespace\", name=\"$vm\"}[5m])",
+                        "format": "time_series",
+                        "instant": false,
+                        "interval": "",
+                        "intervalFactor": 1,
+                        "legendFormat": "{{drive}}-read",
+                        "refId": "A"
+                      },
+                      {
+                        "expr": "irate(kubevirt_vmi_storage_iops_write_total{namespace=\"$namespace\", name=\"$vm\"}[5m])",
+                        "interval": "",
+                        "legendFormat": "{{drive}}-writ",
+                        "refId": "B"
+                      }
+                    ],
+                    "thresholds": [],
+                    "timeFrom": null,
+                    "timeRegions": [],
+                    "timeShift": null,
+                    "title": "IOPS",
+                    "tooltip": {
+                      "shared": true,
+                      "sort": 0,
+                      "value_type": "individual"
+                    },
+                    "type": "graph",
+                    "xaxis": {
+                      "buckets": null,
+                      "mode": "time",
+                      "name": null,
+                      "show": true,
+                      "values": []
+                    },
+                    "yaxes": [
+                      {
+                        "$$hashKey": "object:247",
+                        "format": "iops",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      },
+                      {
+                        "$$hashKey": "object:248",
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      }
+                    ],
+                    "yaxis": {
+                      "align": false,
+                      "alignLevel": null
+                    }
+                  },
+                  {
+                    "aliasColors": {},
+                    "bars": false,
+                    "dashLength": 10,
+                    "dashes": false,
+                    "datasource": null,
+                    "fieldConfig": {
+                      "defaults": {},
+                      "overrides": []
+                    },
+                    "fill": 1,
+                    "fillGradient": 0,
+                    "gridPos": {
+                      "h": 7,
+                      "w": 24,
+                      "x": 0,
+                      "y": 14
+                    },
+                    "hiddenSeries": false,
+                    "id": 9,
+                    "legend": {
+                      "avg": false,
+                      "current": false,
+                      "max": false,
+                      "min": false,
+                      "show": false,
+                      "total": false,
+                      "values": false
+                    },
+                    "lines": true,
+                    "linewidth": 1,
+                    "links": [],
+                    "nullPointMode": "null as zero",
+                    "options": {
+                      "alertThreshold": true
+                    },
+                    "percentage": false,
+                    "pluginVersion": "7.5.8",
+                    "pointradius": 2,
+                    "points": false,
+                    "renderer": "flot",
+                    "seriesOverrides": [],
+                    "spaceLength": 10,
+                    "stack": false,
+                    "steppedLine": false,
+                    "targets": [
+                      {
+                        "expr": "irate(kubevirt_vmi_network_receive_bytes_total{namespace=\"$namespace\", name=\"$vm\"}[5m])*8",
+                        "format": "time_series",
+                        "interval": "",
+                        "intervalFactor": 1,
+                        "legendFormat": "{{interface}}-receive",
+                        "refId": "A"
+                      },
+                      {
+                        "expr": "irate(kubevirt_vmi_network_transmit_bytes_total{namespace=\"$namespace\", name=\"$vm\"}[5m])*8",
+                        "interval": "",
+                        "legendFormat": "{{interface}}-transmit",
+                        "refId": "B"
+                      }
+                    ],
+                    "thresholds": [],
+                    "timeFrom": null,
+                    "timeRegions": [],
+                    "timeShift": null,
+                    "title": "Network Traffic",
+                    "tooltip": {
+                      "shared": true,
+                      "sort": 0,
+                      "value_type": "individual"
+                    },
+                    "type": "graph",
+                    "xaxis": {
+                      "buckets": null,
+                      "mode": "time",
+                      "name": null,
+                      "show": true,
+                      "values": []
+                    },
+                    "yaxes": [
+                      {
+                        "$$hashKey": "object:421",
+                        "format": "bps",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      },
+                      {
+                        "$$hashKey": "object:422",
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      }
+                    ],
+                    "yaxis": {
+                      "align": false,
+                      "alignLevel": null
+                    }
+                  }
+                ],
+                "refresh": "10s",
+                "schemaVersion": 27,
+                "style": "dark",
+                "tags": [],
+                "templating": {
+                  "list": [
+                    {
+                      "allValue": null,
+                      "current": {
+                        "selected": false,
+                        "text": "default",
+                        "value": "default"
+                      },
+                      "datasource": null,
+                      "definition": "label_values(kubevirt_vmi_vcpu_seconds, namespace)",
+                      "description": null,
+                      "error": null,
+                      "hide": 0,
+                      "includeAll": false,
+                      "label": "namespace",
+                      "multi": false,
+                      "name": "namespace",
+                      "options": [],
+                      "query": {
+                        "query": "label_values(kubevirt_vmi_vcpu_seconds, namespace)",
+                        "refId": "Prometheus-namespace-Variable-Query"
+                      },
+                      "refresh": 1,
+                      "regex": "",
+                      "skipUrlSync": false,
+                      "sort": 2,
+                      "tagValuesQuery": "",
+                      "tags": [],
+                      "tagsQuery": "",
+                      "type": "query",
+                      "useTags": false
+                    },
+                    {
+                      "allValue": null,
+                      "current": {
+                        "selected": false,
+                        "text": "tt",
+                        "value": "tt"
+                      },
+                      "datasource": null,
+                      "definition": "label_values(kubevirt_vmi_vcpu_seconds{namespace=\"$namespace\"}, name)",
+                      "description": null,
+                      "error": null,
+                      "hide": 0,
+                      "includeAll": false,
+                      "label": "vm",
+                      "multi": false,
+                      "name": "vm",
+                      "options": [],
+                      "query": {
+                        "query": "label_values(kubevirt_vmi_vcpu_seconds{namespace=\"$namespace\"}, name)",
+                        "refId": "Prometheus-vm-Variable-Query"
+                      },
+                      "refresh": 1,
+                      "regex": "",
+                      "skipUrlSync": false,
+                      "sort": 2,
+                      "tagValuesQuery": "",
+                      "tags": [],
+                      "tagsQuery": "",
+                      "type": "query",
+                      "useTags": false
+                    }
+                  ]
+                },
+                "time": {
+                  "from": "now-3h",
+                  "to": "now"
+                },
+                "timepicker": {
+                  "refresh_intervals": [
+                    "5s",
+                    "10s",
+                    "30s",
+                    "1m",
+                    "5m",
+                    "15m",
+                    "30m",
+                    "1h",
+                    "2h",
+                    "1d"
+                  ],
+                  "time_options": [
+                    "5m",
+                    "15m",
+                    "1h",
+                    "6h",
+                    "12h",
+                    "24h",
+                    "2d",
+                    "7d",
+                    "30d"
+                  ]
+                },
+                "timezone": "",
+                "title": "Harvester VM Info Detail",
+                "uid": "harvester-vm-detail-1",
+                "version": 2
+              }
+      encoding: ""
+      ownerstring: ""
+    - path: /etc/rancher/rancherd/config.yaml.d/10-harvester.yaml
+      permissions: 384
+      owner: 0
+      group: 0
+      content: |
+        resources:
+        # create the cattle-monitoring-system namespace and SA upfront, so that kubevirt monitoring-operator integration can find it
+        - apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: cattle-monitoring-system
+        - apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            annotations:
+              meta.helm.sh/release-name: rancher-monitoring
+              meta.helm.sh/release-namespace: cattle-monitoring-system
+            labels:
+              app: rancher-monitoring-operator
+              app.kubernetes.io/component: prometheus-operator
+              app.kubernetes.io/instance: rancher-monitoring
+              app.kubernetes.io/managed-by: Helm
+              app.kubernetes.io/name: rancher-monitoring-prometheus-operator
+              heritage: Helm
+              release: rancher-monitoring
+            name: rancher-monitoring-operator
+            namespace: cattle-monitoring-system
+        - apiVersion: helm.cattle.io/v1
+          kind: HelmChartConfig
+          metadata:
+            name: rke2-ingress-nginx
+            namespace: kube-system
+          spec:
+            valuesContent: |-
+              controller:
+                config:
+                  proxy-body-size: "0"
+                  proxy-request-buffering: "off"
+                admissionWebhooks:
+                  port: 8444
+                publishService:
+                  pathOverride: kube-system/ingress-expose
+                extraArgs:
+                  default-ssl-certificate: cattle-system/tls-rancher-internal
+        - apiVersion: v1
+          kind: Secret
+          metadata:
+            name: tls-ingress
+            namespace: cattle-system
+          type: Opaque
+          data:
+            tls.crt: Cg==
+            tls.key: Cg==
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: rancher-expose
+            namespace: cattle-system
+          spec:
+            rules:
+            - http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: rancher
+                      port:
+                        number: 80
+        - apiVersion: management.cattle.io/v3
+          kind: ManagedChart
+          metadata:
+            name: harvester
+            namespace: fleet-local
+          spec:
+            chart: harvester
+            releaseName: harvester
+            version: 1.0.3
+            defaultNamespace: harvester-system
+            repoName: harvester-charts
+            targets:
+            - clusterName: local
+              clusterSelector:
+                matchExpressions:
+                - key: provisioning.cattle.io/unmanaged-system-agent
+                  operator: DoesNotExist
+            values:
+              service:
+                vip:
+                  enabled: true
+                  mode: "static"
+                  ip: "192.168.122.99"
+                  hwAddress: ""
+              kubevirt:
+                spec:
+                  monitorAccount: rancher-monitoring-operator
+                  monitorNamespace: cattle-monitoring-system
+              containers:
+                apiserver:
+                  image:
+                    imagePullPolicy: "IfNotPresent"
+                  hciMode: true
+              multus:
+                enabled: false
+              longhorn:
+                enabled: true
+                defaultSettings:
+                  taintToleration: "kubevirt.io/drain:NoSchedule"
+                  defaultDataPath: "/var/lib/harvester/defaultdisk"
+              harvester-network-controller:
+                enabled: true
+                vipEnabled: true
+                image:
+                  pullPolicy: "IfNotPresent"
+              harvester-node-disk-manager:
+                enabled: true
+                image:
+                  pullPolicy: "IfNotPresent"
+                labelFilter:
+                  - "COS_*"
+                  - "HARV_*"
+              rancherEmbedded: true
+              webhook:
+                image:
+                  imagePullPolicy: "IfNotPresent"
+              harvester-load-balancer:
+                enabled: true
+              kube-vip:
+                enabled: true
+              kube-vip-cloud-provider:
+                enabled: true
+        - apiVersion: management.cattle.io/v3
+          kind: ManagedChart
+          metadata:
+            name: harvester-crd
+            namespace: fleet-local
+          spec:
+            chart: harvester-crd
+            releaseName: harvester-crd
+            version: 1.0.3
+            defaultNamespace: harvester-system
+            repoName: harvester-charts
+            # takeOwnership will force apply this chart without checking ownership in labels and annotations.
+            # https://github.com/rancher/fleet/blob/ce9c0d6c0a455d61e87c0f19df79d0ee11a89eeb/pkg/helmdeployer/deployer.go#L323
+            # https://github.com/rancher/helm/blob/ee91a121e0aa301fcef2bfbc7184f96edd4b50f5/pkg/action/validate.go#L71-L76
+            takeOwnership: true
+            targets:
+            - clusterName: local
+              clusterSelector:
+                matchExpressions:
+                - key: provisioning.cattle.io/unmanaged-system-agent
+                  operator: DoesNotExist
+            values: {}
+      encoding: ""
+      ownerstring: ""
+    - path: /etc/rancher/rancherd/config.yaml.d/11-monitoring-crd.yaml
+      permissions: 384
+      owner: 0
+      group: 0
+      content: |
+        resources:
+        - apiVersion: management.cattle.io/v3
+          kind: ManagedChart
+          metadata:
+            name: rancher-monitoring-crd
+            namespace: fleet-local
+          spec:
+            chart: rancher-monitoring-crd
+            releaseName: rancher-monitoring-crd
+            version: 100.1.0+up19.0.3
+            defaultNamespace: cattle-monitoring-system
+            repoName: harvester-charts
+            targets:
+            - clusterName: local
+              clusterSelector:
+                matchExpressions:
+                - key: provisioning.cattle.io/unmanaged-system-agent
+                  operator: DoesNotExist
+      encoding: ""
+      ownerstring: ""
+    - path: /etc/rancher/rke2/config.yaml.d/90-harvester-server.yaml
+      permissions: 384
+      owner: 0
+      group: 0
+      content: |
+        cni: multus,canal
+        cluster-cidr: 10.52.0.0/16
+        service-cidr: 10.53.0.0/16
+        cluster-dns: 10.53.0.10
+        tls-san:
+          - 192.168.122.99
+      encoding: ""
+      ownerstring: ""
+    - path: /etc/rancher/rke2/config.yaml.d/90-harvester-agent.yaml
+      permissions: 384
+      owner: 0
+      group: 0
+      content: |2+
+
+      encoding: ""
+      ownerstring: ""
+    - path: /etc/sysconfig/network/ifcfg-harvester-mgmt
+      permissions: 384
+      owner: 0
+      group: 0
+      content: |+
+        STARTMODE='onboot'
+        BONDING_MASTER='yes'
+        BOOTPROTO='dhcp'
+
+
+        BONDING_SLAVE_0='ens3'
+
+        BONDING_MODULE_OPTS='miimon=100 mode=balance-tlb '
+
+        DHCLIENT_SET_DEFAULT_ROUTE='yes'
+
+      encoding: ""
+      ownerstring: ""
+    - path: /etc/sysconfig/network/ifcfg-ens3
+      permissions: 384
+      owner: 0
+      group: 0
+      content: |
+        STARTMODE='hotplug'
+        BOOTPROTO='none'
+      encoding: ""
+      ownerstring: ""
+    - path: /var/lib/rancher/rke2/server/manifests/rke2-canal-config.yaml
+      permissions: 384
+      owner: 0
+      group: 0
+      content: |
+        apiVersion: helm.cattle.io/v1
+        kind: HelmChartConfig
+        metadata:
+          name: rke2-canal
+          namespace: kube-system
+        spec:
+          valuesContent: |-
+            flannel:
+              iface: harvester-mgmt
+      encoding: ""
+      ownerstring: ""
+    downloads: []
+    directories:
+    - path: /etc/rancher/rke2/config.yaml.d
+      permissions: 384
+      owner: 0
+      group: 0
+    - path: /etc/rancher/rancherd/config.yaml.d/
+      permissions: 384
+      owner: 0
+      group: 0
+    - path: /var/lib/rancher/rke2/server/manifests/
+      permissions: 384
+      owner: 0
+      group: 0
+    if: ""
+    ensure_entities: []
+    delete_entities: []
+    dns:
+      nameservers: []
+      search: []
+      options: []
+      path: ""
+    hostname: harv1
+    name: ""
+    sysctl: {}
+    authorized_keys: {}
+    node: ""
+    users:
+      rancher:
+        passwd: $6$4KhLw.y7kBys10VP$iTGJNPKqDlHtq94Z/qGVwTTHPlzl0GM/joc9FJxuVCl3JzxcIc.ZIA8ZfBpMcE/uXOKVxDTUwuOVRD5RsiNuq.
+        lock_passwd: false
+        uid: ""
+    modules:
+    - kvm
+    - vhost_net
+    systemctl:
+      enable:
+      - systemd-timesyncd
+      disable: []
+      start: []
+      mask: []
+    environment: {}
+    environment_file: ""
+    datasource:
+      providers: []
+      path: ""
+    layout:
+      device: null
+    systemd_firstboot: {}
+    timesyncd:
+      NTP: 0.suse.pool.ntp.org
+    git:
+      auth:
+        username: ""
+        password: ""
+        private_key: ""
+        insecure: false
+        public_key: ""
+      url: ""
+      path: ""
+      branch: ""
+      branch_only: false
+  network:
+  - commands: []
+    files: []
+    downloads: []
+    directories: []
+    if: ""
+    ensure_entities: []
+    delete_entities: []
+    dns:
+      nameservers: []
+      search: []
+      options: []
+      path: ""
+    hostname: ""
+    name: ""
+    sysctl: {}
+    authorized_keys:
+      rancher:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDukDaTZWUwq57hDZhXWoL0qjCOGwxmbn5ogWp+JIv3HA/0ff3+LaBFXSbCmAqB7qeIG7AQSSggSpsIBmpiI89dPkQYtkizxqEj7677+ZjSLWgARodpl6K5ASgm+48Fq+t3f/JVNyRhdkqAVM8OdPHhQD3BSqHmDHQmkt2S5GnUUukowjHI/vpG1f5RKnfLduQjWXmcuRtNOD1cyqT3uxRnUGkd3PeBjJ5li6nMx8tom+WmTe0ETd9Z0TyB48aK10GtzOLme+D/8tNgGEOCsG6f7A5kCkU9AAKAqeEuSWOb/Whz5YYLXysgChDYjWlFbSnqbAx9Qg2eprqCfYBGlD4utihEMoEmX5wNkWJ7CY1r2blmmoBjWtbHiY42LQ5gMOGaWArO/JGOhGV6zHWDwnJuC5H/06bxuU5gGscV7X1sb5uJ/sIuAGKmIo4Aq2uRiFAlCRd9dTqxI386cVTDv8ROX4AUVv0qr4F7897AF9x3ZdL6U5zPJcOo8Ssw3yzG/QM=
+    node: ""
+    users: {}
+    modules: []
+    systemctl:
+      enable: []
+      disable: []
+      start: []
+      mask: []
+    environment: {}
+    environment_file: ""
+    datasource:
+      providers: []
+      path: ""
+    layout:
+      device: null
+    systemd_firstboot: {}
+    timesyncd: {}
+    git:
+      auth:
+        username: ""
+        password: ""
+        private_key: ""
+        insecure: false
+        public_key: ""
+      url: ""
+      path: ""
+      branch: ""
+      branch_only: false
+  rootfs:
+  - commands: []
+    files: []
+    downloads: []
+    directories: []
+    if: '[ ! -f "/run/cos/recovery_mode" ]'
+    ensure_entities: []
+    delete_entities: []
+    dns:
+      nameservers: []
+      search: []
+      options: []
+      path: ""
+    hostname: ""
+    name: Rootfs layout overwrite
+    sysctl: {}
+    authorized_keys: {}
+    node: ""
+    users: {}
+    modules: []
+    systemctl:
+      enable: []
+      disable: []
+      start: []
+      mask: []
+    environment:
+      OVERLAY: tmpfs:25%
+      PERSISTENT_STATE_BIND: "true"
+      PERSISTENT_STATE_PATHS: /etc/systemd /etc/rancher /etc/ssh /etc/iscsi /etc/cni
+        /etc/pki/trust/anchors /home /opt /root /usr/libexec /var/log /var/lib/rancher
+        /var/lib/kubelet /var/lib/wicked /var/lib/cni /var/crash /var/lib/longhorn
+      RW_PATHS: /var /etc /srv /boot
+      VOLUMES: LABEL=COS_OEM:/oem LABEL=COS_PERSISTENT:/usr/local LABEL=HARV_LH_DEFAULT:/var/lib/harvester/defaultdisk
+    environment_file: /run/cos/cos-layout.env
+    datasource:
+      providers: []
+      path: ""
+    layout:
+      device: null
+    systemd_firstboot: {}
+    timesyncd: {}
+    git:
+      auth:
+        username: ""
+        password: ""
+        private_key: ""
+        insecure: false
+        public_key: ""
+      url: ""
+      path: ""
+      branch: ""
+      branch_only: false
