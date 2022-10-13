@@ -396,3 +396,6 @@ $docker stop 69918df2e21f
 
 refer:  https://github.com/w13915984028/harvester-develop-summary/blob/main/test-log-event-audit-with-webhook-server.md
 
+## test with Splunk log server
+
+https://github.com/w13915984028/harvester-develop-summary/blob/main/test-log-event-audit-with-splunk.md
