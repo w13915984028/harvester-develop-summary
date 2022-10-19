@@ -8,6 +8,8 @@ https://github.com/harvester/harvester/issues/2558
 
 https://github.com/rancher/dynamiclistener/issues/63
 
+https://github.com/harvester/harvester/issues/2941 (update 2022.10.19)
+
 ### Description of the issue
 
 The `Harvester` POD has a stable 100% cpu usage, but from the log, nothing seems wrong.
@@ -240,17 +242,44 @@ root         1  0.0  0.0   4564   724 ?        Ss   15:42   0:00 tini -- harvest
 root         8  100  1.4 1179076 231988 ?      Sl   15:42   2:33 harvester
 root        21  0.0  0.0  15116  4356 pts/0    Ss   15:44   0:00 /bin/bash
 root        50  100  0.0  38184  4004 pts/0    R+   15:44   0:00 ps aux
+
+
+when ps cmd is not there, use ls /proc and cat related process cmd line to check which process is the main one
+
 ```
 
 Kill.
 
 ```
 harvester-756cd66d6d-x4gm6:/var/lib/harvester/harvester # kill -s SIGABRT 8
+
+or
+
+kill -n 6 pid
+
 ```
 
 Quickly scrap log
+
 ```
   kk logs -n harvester-system harvester-756cd66d6d-x4gm6 > /home/rancher/trace1.txt
+
+
+update at 2022.10.19:
+
+the best way is:
+
+fetch the log from the NODE which is running the POD, the file path will be like
+
+..# ls /var/log/pods/harvester-system_harvester-network-webhook-68b68f67df-2vbfz_0b2c58ae-e65e-4b35-bf1f-1a5f542ffde3/harvester-network-webhook/ -alth
+total 340K
+-rw-r----- 1 root root 3.0K Oct 19 15:34 2.log
+drwxr-xr-x 2 root root 4.0K Oct 19 15:34 .
+-rw-r----- 1 root root 325K Oct 19 15:34 1.log
+drwxr-xr-x 3 root root 4.0K Oct 19 15:19 ..
+
+
+Normally, there will be  2 files here, the big one will contain the stack trace
 ```
   
 
