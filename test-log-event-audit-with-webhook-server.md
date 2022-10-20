@@ -76,6 +76,29 @@ python3 simple-webhook-server.py
 > {"stream":"stdout","logtag":"F","message":"10.52.0.186 - - [20/Sep/2022:19:34:35 +0000] \"GET /charts/index.yaml HTTP/1.1\" 200 10314 \"-\" \"Go-http-client/1.1\"","kubernetes":{"pod_name":"harvester-cluster-repo-56b5f7b585-qn2rr","namespace_name":"cattle-system","pod_id":"ce0302bf-928a-47f4-83d3-4957221b63f7","labels":{"app":"harvester-cluster-repo","pod-template-hash":"56b5f7b585"},"annotations":{"cni.projectcalico.org/containerID":"767441a6c1d13ceaeac5411274f150564ea97da9c7a2ea954208cb79ade2e190","cni.projectcalico.org/podIP":"10.52.0.174/32","cni.projectcalico.org/podIPs":"10.52.0.174/32","k8s.v1.cni.cncf.io/network-status":"[{\n    \"name\": \"k8s-pod-network\",\n    \"ips\": [\n        \"10.52.0.174\"\n    ],\n    \"default\": true,\n    \"dns\": {}\n}]","k8s.v1.cni.cncf.io/networks-status":"[{\n    \"name\": \"k8s-pod-network\",\n    \"ips\": [\n        \"10.52.0.174\"\n    ],\n    \"default\": true,\n    \"dns\": {}\n}]","kubernetes.io/psp":"global-unrestricted-psp"},"host":"harv41","container_name":"httpd","docker_id":"3fbb5108c8966eefd5d34991514ec6d32aabfe983d25ffcc5d14e72dd90ae579","container_hash":"sha256:5cb6ec87a3ccb57583c285c88dab15fd23de36c41972917ee7960ae1dab567d2","container_image":"docker.io/rancher/harvester-cluster-repo:master"}}
 
 
+#### outputsample: audit
+
+> DATA RECEIVED @ 2022-10-20 13:43:02.266439, length 2,667, element-count 3
+
+> -------- element 1 --------
+
+> {"kind":"Event","apiVersion":"audit.k8s.io/v1","level":"Metadata","auditID":"965580b8-8715-4f88-828d-9af7f086a6df","stage":"RequestReceived","requestURI
+":"/apis/authorization.k8s.io/v1/subjectaccessreviews?timeout=10s","verb":"create","user":{"username":"system:serviceaccount:kube-system:rke2-metrics-se
+rver","uid":"19592b74-d331-462d-8d87-6ee7a3d9e7be","groups":["system:serviceaccounts","system:serviceaccounts:kube-system","system:authenticated"],"extr
+a":{"authentication.kubernetes.io/pod-name":["rke2-metrics-server-67697454f8-92v88"],"authentication.kubernetes.io/pod-uid":["bc2b7356-a12a-49f1-b105-a5
+6c0cac4ea1"]}},"sourceIPs":["10.52.0.108"],"userAgent":"Go-http-client/2.0","objectRef":{"resource":"subjectaccessreviews","apiGroup":"authorization.k8s
+.io","apiVersion":"v1"},"requestReceivedTimestamp":"2022-10-20T11:41:52.766616Z","stageTimestamp":"2022-10-20T11:41:52.766616Z"}
+
+> -------- element 2 --------
+
+> {"kind":"Event","apiVersion":"audit.k8s.io/v1","level":"Metadata","auditID":"9dae6ad1-ffe3-4979-b4ea-28f67bc46bd5","stage":"RequestReceived","requestURI
+":"/apis/authorization.k8s.io/v1/subjectaccessreviews?timeout=10s","verb":"create","user":{"username":"system:serviceaccount:kube-system:rke2-metrics-se
+rver","uid":"19592b74-d331-462d-8d87-6ee7a3d9e7be","groups":["system:serviceaccounts","system:serviceaccounts:kube-system","system:authenticated"],"extr
+a":{"authentication.kubernetes.io/pod-name":["rke2-metrics-server-67697454f8-92v88"],"authentication.kubernetes.io/pod-uid":["bc2b7356-a12a-49f1-b105-a5
+6c0cac4ea1"]}},"sourceIPs":["10.52.0.108"],"userAgent":"Go-http-client/2.0","objectRef":{"resource":"subjectaccessreviews","apiGroup":"authorization.k8s
+.io","apiVersion":"v1"},"requestReceivedTimestamp":"2022-10-20T11:41:52.766624Z","stageTimestamp":"2022-10-20T11:41:52.766624Z"}
+
+
 #### outputsample: event
 
 > DATA RECEIVED @ 2022-09-20 19:41:04.317929, length 6,810, element-count 2
@@ -198,7 +221,7 @@ kubectl apply -f cf-event1.yaml
 
 ```
 
-cat > co-audit1.YAML << 'EOF'
+cat > co-audit1.yaml << 'EOF'
 apiVersion: logging.banzaicloud.io/v1beta1
 kind: ClusterOutput
 metadata:
@@ -218,7 +241,7 @@ spec:
 EOF
 
 
-cat > cf-audit1.YAML << 'EOF'
+cat > cf-audit1.yaml << 'EOF'
 apiVersion: logging.banzaicloud.io/v1beta1
 kind: ClusterFlow
 metadata:
