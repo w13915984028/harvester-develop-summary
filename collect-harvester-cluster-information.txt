@@ -1,0 +1,115 @@
+# please paste all the text of this file on a terminal via
+#  (1) ssh to harvester VIP
+#  (2) on a Linux machine which can run kubectl to operate the target harveter cluster
+# it will generate a shell file and run it automaicaly, the output is saved on file
+# /tmp/harvester_information.txt
+#
+
+cat > /tmp/get_information.sh << 'EOF'
+get_harvester_cluster_information () {
+
+  echo "nodes related"
+
+  kubectl get nodes -A -owide
+  
+  kubectl get machines.cluster.x-k8s.io -A -owide
+  
+  kubectl get rkeclusters.rke.cattle.io -A -owide
+
+  kubectl get clusters.provisioning.cattle.io -A -owide
+
+  kubectl get clusters.provisioning.cattle.io -A -oyaml
+
+  kubectl get blockdevice -A -owide
+  
+  kubectl top node
+
+
+  echo "pods related"
+  
+  kubectl get pods -A -owide
+  
+  kubectl get pvc -A
+  
+  kubectl get volumes -A
+  
+  kubectl get managedchart -A
+  
+  kubectl get bundle -A
+  
+  kubectl get deployment -A
+  
+  kubectl get statefulset -A
+  
+  kubectl get daemonset -A
+  
+  kubectl top pods -A
+
+
+  echo "services related"
+  
+  kubectl get service -A
+  
+  kubectl get service -n kube-system ingress-expose -ojsonpath='{.status.loadBalancer.ingress}'
+  echo ""
+  
+  echo "network related"
+  
+  kubectl get clusternetwork -A
+  
+  kubectl get vlanconfig -A
+  
+  echo "addons related"
+  kubectl get addons.harvesterhci.io -A
+  
+  kubectl get helmchart -A
+ 
+
+  echo "vms related"
+  
+  kubectl get vm -A -owide
+  kubectl get vmi -A -owide
+
+
+  echo "storage-class related"
+  
+  kubectl get storageclass -A -owide
+
+
+  echo "settngs related"
+  
+  kubectl get settings.harvesterhci.io -A -owide
+  
+  kubectl get settings.longhorn.io -A -owide
+
+
+  echo "system service related"
+  
+  systemctl status rke2-server | cat || echo "get service rke2-server failed"
+  
+  systemctl status rke2-agent | cat || echo "get service rke2-agent failed"
+  
+  systemctl status rancherd.service | cat || echo "get service rancherd failed"
+  
+  systemctl status rancher-system-agent.service | cat || echo "get service rancher-system-agent failed"
+  
+  cat /oem/harvester.config  || echo "get harvester config file failed"
+}
+
+date
+
+echo "get all the related information from Harvester cluster"
+
+get_harvester_cluster_information
+
+EOF
+
+chmod +x /tmp/get_information.sh
+
+sudo -i /tmp/get_information.sh > /tmp/harvester_information.txt
+
+cat /tmp/harvester_information.txt
+
+echo "the output is saved on file /tmp/harvester_information.txt"
+
+
