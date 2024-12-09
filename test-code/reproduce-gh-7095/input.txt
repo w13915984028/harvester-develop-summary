@@ -1,0 +1,10 @@
+Personalities : [raid6] [raid5] [raid4]
+md125 : inactive sdc1[29](S) sdb1[27](S) sde1[28](S) sda1[26](S) sdd1[30](S)
+      41937920 blocks super 1.2
+
+md126 : active raid5 super 1.2 level 5, 64k chunk, algorithm 2 [4/0] [____]
+
+md127 : inactive sdc2[28](S) sdb2[30](S) sda2[27](S) sdd2[29](S) sde2[26](S)
+      10480640 blocks super 1.2
+
+unused devices: <none>
