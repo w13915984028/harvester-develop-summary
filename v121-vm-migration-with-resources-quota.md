@@ -6,7 +6,7 @@ When VM is under migration, Harvester will scale up & down the related resourceq
 
 https://github.com/harvester/harvester/blob/992cd4c9ea20b95ed51d6d3a7654cec47255dc83/pkg/controller/master/migration/vmim_controller.go#L54
 
-issue: https://github.com/harvester/harvester/issues/7161
+issue: [Fix the race between Rancher and Harvester on resourcequota when VM is migrating](https://github.com/harvester/harvester/issues/7178)
 
 Following log is observed from one environment:
 
@@ -42,7 +42,417 @@ https://github.com/kubernetes/kubernetes/blob/b1f2af04328936c2fa79db4af14f5c6ad9
 ...
 ```
 
-## Local Test Environment
+The namespace configuration:
+
+```
+- apiVersion: v1
+  kind: Namespace
+  metadata:
+    annotations:
+      cattle.io/status: '{"Conditions":[{"Type":"ResourceQuotaValidated","Status":"True","Message":"","LastUpdateTime":"2024-12-10T15:36:46Z"},{"Type":"ResourceQuotaInit","Status":"True","Message":"","LastUpdateTime":"2024-07-23T09:46:31Z"},{"Type":"InitialRolesPopulated","Status":"True","Message":"","LastUpdateTime":"2024-07-23T09:46:31Z"}]}'
+      field.cattle.io/containerDefaultResourceLimit: '{}'
+      field.cattle.io/projectId: c-btss6:p-cl4tp
+      field.cattle.io/resourceQuota: '{"limit":{"pods":"50","services":"15","replicationControllers":"50","secrets":"65","configMaps":"15","persistentVolumeClaims":"75","servicesNodePorts":"15","servicesLoadBalancers":"1","requestsCpu":"30000m","requestsMemory":"61440Mi","requestsStorage":"327680Mi","limitsCpu":"30000m","limitsMemory":"61440Mi"}}'
+      lifecycle.cattle.io/create.namespace-auth: "true"
+    creationTimestamp: "2024-07-23T09:46:30Z"
+    finalizers:
+    - controller.cattle.io/namespace-auth
+    labels:
+      field.cattle.io/projectId: p-cl4tp
+      kubernetes.io/metadata.name: ns1
+    managedFields:
+```
+
+
+The generated resourcequota:
+
+```
+- apiVersion: v1
+  kind: ResourceQuota
+  metadata:
+    creationTimestamp: "2024-07-23T09:46:30Z"
+    generateName: default-
+    labels:
+      cattle.io/creator: norman
+      resourcequota.management.cattle.io/default-resource-quota: "true"
+...
+  spec:
+    hard:
+      configmaps: "15"
+      limits.cpu: "30"
+      limits.memory: 60Gi
+      persistentvolumeclaims: "75"
+      pods: "50"
+      replicationcontrollers: "50"
+      requests.cpu: "30"
+      requests.memory: 60Gi
+      requests.storage: 320Gi
+      secrets: "65"
+      services: "15"
+      services.loadbalancers: "1"
+      services.nodeports: "15"
+```
+
+## Issue: `ResourceQuota` was changed unexpected
+
+The first occurance of "exceeded quota" error, it reports :`exceeded quota limits.cpu=30,limits.memory=60Gi`.
+
+But in general, when a migration object is created, Harvester scales up the RQ, above error still showed the original quota value.
+
+### The migration started on 2024-12-10T14:05:34
+
+```
+2024-12-10T14:05:34:
+
+{"component":"virt-controller","level":"info","msg":"node: ...003, migrations: 0, candidates: 9, selected: 2","pos":"evacuation.go:432","timestamp":"2024-12-10T14:05:34.661377Z"}
+{"component":"virt-controller","level":"info","msg":"node: ...003, migrations: 2, candidates: 7, selected: 2","pos":"evacuation.go:432","timestamp":"2024-12-10T14:05:34.694592Z"}
+
+2024-12-10T14:05:34:
+{"component":"virt-controller","level":"info","msg":"node: ...003, migrations: 6, candidates: 3, selected: 2","pos":"evacuation.go:432","timestamp":"2024-12-10T14:05:34.727790Z"}
+{"component":"virt-controller","level":"info","msg":"node: ...003, migrations: 8, candidates: 1, selected: 1","pos":"evacuation.go:432","timestamp":"2024-12-10T14:05:34.748159Z"}
+
+{"component":"virt-controller","level":"info","msg":"node: ...005, migrations: 5, candidates: 7, selected: 1","pos":"evacuation.go:432","timestamp":"2024-12-10T14:33:04.772536Z"}
+{"component":"virt-controller","level":"info","msg":"node: ...005, migrations: 6, candidates: 6, selected: 1","pos":"evacuation.go:432","timestamp":"2024-12-10T14:33:04.797739Z"}
+{"component":"virt-controller","level":"info","msg":"node: ...005, migrations: 7, candidates: 5, selected: 1","pos":"evacuation.go:432","timestamp":"2024-12-10T14:33:04.814873Z"}
+{"component":"virt-controller","level":"info","msg":"node: ...005, migrations: 8, candidates: 4, selected: 1","pos":"evacuation.go:432","timestamp":"2024-12-10T14:33:04.831214Z"}
+```
+
+### vm poc...-f6f0abad-vdrzq stated to migrate on 2024-12-10T14:32:09, it increased the used
+
+```
+{"component":"virt-controller","kind":"","level":"info","msg":"Created migration target pod ...ns2/virt-launcher-...-f6f0abad-vdrzq-fk9lr with uuid 2d3dd475-c78d-4474-87e4-4e874576d139 for migration kubevirt-evacuation-x4bcq with uuid c315a4ee-0158-4af2-bd07-2a4000398046","name":"...-f6f0abad-vdrzq","namespace":"...-ns2","pos":"migration.go:717","timestamp":"2024-12-10T14:32:09.596568Z","uid":"8ecd6869-3e1d-4de5-a7fa-2ce389a72b16"}
+```
+
+Harvester POD had no failure log, it meant the scaleup was done successfully. The `limits.cpu` should be `34`.
+
+### vm ...-1231906e-gzrdg encountered error `exceeded quota` on 2024-12-10T14:33:04, the used `cpu=28405`: 6*4 Core + above migration ~= 28 Core, why `exceeded quota`?
+
+```
+{"component":"virt-controller","level":"info","msg":"node: ...01005, migrations: 6, candidates: 6, selected: 1","pos":"evacuation.go:432","timestamp":"2024-12-10T14:33:04.797739Z"}
+
+{"component":"virt-controller","level":"info","msg":"reenqueuing Migration ...-ns2/kubevirt-evacuation-m226w","pos":"migration.go:233","reason":"failed to create vmi migration target pod: pods \"virt-launcher-...-1231906e-gzrdg-dprq2\" is forbidden: exceeded quota: default-xt5b2, requested: limits.cpu=4015m,limits.memory=8940039936, used: limits.cpu=28405m,limits.memory=62820279552, limited: limits.cpu=30,limits.memory=60Gi","timestamp":"2024-12-10T14:33:04.808638Z"}
+```
+
+But now, the limit was reverted to `limits.cpu=30,limits.memory=60Gi`, not the expected `34` (with one ongoing migration) or `38` (with two ongoing migration).
+
+### The scaled result, looked to be reverted by Rancher
+
+https://github.com/rancher/rancher/blob/b435a2d786c50b03bd1ba7279a6a621ebcd19c84/pkg/controllers/managementuser/resourcequota/resource_quota_sync.go#L114C26-L114C45
+
+### Evidence 1: ResourceQuota was updated by `rancher`, and the time-stamp was after the above migration
+
+It means Rancher update it several times, and `2024-12-10T15:36:44Z` was the last updating time.
+
+Last updating time from Harvester `2024-12-10T16:18:37Z`.
+
+```
+- apiVersion: v1
+  kind: ResourceQuota
+  metadata:
+    creationTimestamp: "2024-07-24T09:40:09Z"
+    generateName: default-
+    labels:
+      cattle.io/creator: norman
+      resourcequota.management.cattle.io/default-resource-quota: "true"
+    managedFields:
+    - apiVersion: v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:metadata:
+          f:generateName: {}
+          f:labels:
+            .: {}
+            f:cattle.io/creator: {}
+            f:resourcequota.management.cattle.io/default-resource-quota: {}
+        f:spec:
+          f:hard:
+            .: {}
+            f:configmaps: {}
+            f:persistentvolumeclaims: {}
+            f:pods: {}
+            f:replicationcontrollers: {}
+            f:requests.cpu: {}
+            f:requests.memory: {}
+            f:requests.storage: {}
+            f:secrets: {}
+            f:services: {}
+            f:services.loadbalancers: {}
+            f:services.nodeports: {}
+      manager: rancher
+      operation: Update
+      time: "2024-12-10T15:36:44Z"
+    - apiVersion: v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:spec:
+          f:hard:
+            f:limits.cpu: {}
+            f:limits.memory: {}
+      manager: harvester
+      operation: Update
+      time: "2024-12-10T16:18:37Z"
+    - apiVersion: v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:status:
+          f:hard:
+            .: {}
+            f:configmaps: {}
+            f:limits.cpu: {}
+            f:limits.memory: {}
+            f:persistentvolumeclaims: {}
+            f:pods: {}
+            f:replicationcontrollers: {}
+            f:requests.cpu: {}
+            f:requests.memory: {}
+            f:requests.storage: {}
+            f:secrets: {}
+            f:services: {}
+            f:services.loadbalancers: {}
+            f:services.nodeports: {}
+          f:used:
+            .: {}
+            f:configmaps: {}
+            f:limits.cpu: {}
+            f:limits.memory: {}
+            f:pods: {}
+            f:replicationcontrollers: {}
+            f:requests.cpu: {}
+            f:requests.memory: {}
+            f:services: {}
+            f:services.loadbalancers: {}
+            f:services.nodeports: {}
+      manager: kube-controller-manager
+      operation: Update
+      subresource: status
+      time: "2024-12-10T16:19:31Z"
+```
+
+### Evidence 2: ...-ns1 has following error, the `limits.cpu=26`
+
+```
+...-ns1/kubevirt-evacuation-dfp6
+
+error:
+
+exceeded quota: default-4tmmk, 
+
+requested: limits.cpu=4015m,    limits.memory= 8,940,039,936,
+used:      limits.cpu=28505m,   limits.memory=62,900,279,552,
+limited:   limits.cpu=26,       limits.memory=54,242,646Ki",      "timestamp":"2024-12-10T14:36:47.533782Z
+```
+
+How? Rancher Manager reverted the quota to `limits.cpu=30`, and after migration, Harvester scaleddown it to `30-4=26 Core(each VM is 4 Core)`.
+
+According to those evidences and analysis, following tests are done to validate the assumption.
+
+### Test 1: Manually kill cattle-cluster-agent pod, Rancher Manager reverts the RQ change
+
+1. Create a project and namespace test1sub1 with RQ.
+
+```
+$kubectl get namespaces test1sub1 -oyaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    cattle.io/status: '{"Conditions":[{"Type":"ResourceQuotaValidated","Status":"True","Message":"","LastUpdateTime":"2024-12-16T12:37:18Z"},{"Type":"ResourceQuotaInit","Status":"True","Message":"","LastUpdateTime":"2024-12-16T12:37:18Z"},{"Type":"InitialRolesPopulated","Status":"True","Message":"","LastUpdateTime":"2024-12-16T12:37:18Z"}]}'
+    field.cattle.io/containerDefaultResourceLimit: '{}'
+    field.cattle.io/projectId: c-m-nwmsdwdc:p-snkkp
+    field.cattle.io/resourceQuota: '{"limit":{"limitsCpu":"2000m"}}'
+    lifecycle.cattle.io/create.namespace-auth: "true"
+  creationTimestamp: "2024-12-16T12:37:16Z"
+  finalizers:
+  - controller.cattle.io/namespace-auth
+  labels:
+    field.cattle.io/projectId: p-snkkp
+    kubernetes.io/metadata.name: test1sub1
+  name: test1sub1
+  resourceVersion: "357044"
+  uid: f1838a3e-f1d7-42de-b322-b7f593efadba
+spec:
+  finalizers:
+  - kubernetes
+status:
+  phase: Active
+```
+
+2. The RQ is as expected.
+
+```
+$kubectl get resourcequota -n test1sub1 default-k4n2w -oyaml
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  creationTimestamp: "2024-12-16T12:37:17Z"
+  generateName: default-
+  labels:
+    cattle.io/creator: norman
+    resourcequota.management.cattle.io/default-resource-quota: "true"
+  name: default-k4n2w
+  namespace: test1sub1
+  resourceVersion: "357030"
+  uid: b73ef61c-a946-4cca-ae7a-71e26d5e9d42
+spec:
+  hard:
+    limits.cpu: "2"
+status:
+  hard:
+    limits.cpu: "2"
+  used:
+    limits.cpu: "0"
+harv21:/home/rancher # kk edit resourcequota -n test1sub1 default-k4n2w
+resourcequota/default-k4n2w edited
+```
+
+3. Update he RQ from kubectl.
+
+```
+$kubectl get resourcequota -n test1sub1 default-k4n2w -oyaml
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  creationTimestamp: "2024-12-16T12:37:17Z"
+  generateName: default-
+  labels:
+    cattle.io/creator: norman
+    resourcequota.management.cattle.io/default-resource-quota: "true"
+  name: default-k4n2w
+  namespace: test1sub1
+  resourceVersion: "361636"
+  uid: b73ef61c-a946-4cca-ae7a-71e26d5e9d42
+spec:
+  hard:
+    limits.cpu: "3"
+status:
+  hard:
+    limits.cpu: "3"
+  used:
+    limits.cpu: "0"
+
+$kubectl get resourcequota -n test1sub1 default-k4n2w -oyaml
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  creationTimestamp: "2024-12-16T12:37:17Z"
+  generateName: default-
+  labels:
+    cattle.io/creator: norman
+    resourcequota.management.cattle.io/default-resource-quota: "true"
+  name: default-k4n2w
+  namespace: test1sub1
+  resourceVersion: "361636"
+  uid: b73ef61c-a946-4cca-ae7a-71e26d5e9d42
+spec:
+  hard:
+    limits.cpu: "3"
+status:
+  hard:
+    limits.cpu: "3"
+  used:
+    limits.cpu: "0"
+```
+
+4. Kill `cattle-cluster-agent` POD, the RQ is reverted.
+
+```
+$kubectl delete pod -n cattle-system cattle-cluster-agent-769854d75d-lf9d9 --force
+
+$kubectl get resourcequota -n test1sub1 default-k4n2w -oyaml
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  creationTimestamp: "2024-12-16T12:37:17Z"
+  generateName: default-
+  labels:
+    cattle.io/creator: norman
+    resourcequota.management.cattle.io/default-resource-quota: "true"
+  name: default-k4n2w
+  namespace: test1sub1
+  resourceVersion: "363918"
+  uid: b73ef61c-a946-4cca-ae7a-71e26d5e9d42
+spec:
+  hard:
+    limits.cpu: "2"
+status:
+  hard:
+    limits.cpu: "2"
+  used:
+    limits.cpu: "0"
+```
+
+### Test 2: Logs from SB show `cattle-cluster-agent*` POD started several times in-between above VM migration time window
+
+Based on the above test, the log is re-checked.
+
+In following time `I1210 14:05:40, I1210 14:12:17, I1210 15:20:41`, the `cattle-cluster-agent*` POD restarted.
+
+And per the test, it had synced the resourcequota and reverted the values even though Harvester assumed they shoud have been scaled.
+
+```
+I1210 14:05:40
+
+/...005/logs/kubelet.log:I1210 14:05:40.506853    3806 topology_manager.go:210] "Topology Admit Handler" podUID=37c586f4-2a43-47e1-85f5-c1faf000f034 podNamespace="cattle-system" podName="cattle-cluster-agent-5cd5778bd5-5fhsz"
+./...005/logs/kubelet.log:I1210 14:05:40.612266    3806 reconciler_common.go:253] "operationExecutor.VerifyControllerAttachedVolume started for volume \"kube-api-access-c2qfn\" (UniqueName: \"kubernetes.io/projected/37c586f4-2a43-47e1-85f5-c1faf000f034-kube-api-access-c2qfn\") pod \"cattle-cluster-agent-5cd5778bd5-5fhsz\" (UID: \"37c586f4-2a43-47e1-85f5-c1faf000f034\") " pod="cattle-system/cattle-cluster-agent-5cd5778bd5-5fhsz"
+./...005/logs/kubelet.log:I1210 14:05:40.612332    3806 reconciler_common.go:253] "operationExecutor.VerifyControllerAttachedVolume started for volume \"cattle-credentials\" (UniqueName: \"kubernetes.io/secret/37c586f4-2a43-47e1-85f5-c1faf000f034-cattle-credentials\") pod \"cattle-cluster-agent-5cd5778bd5-5fhsz\" (UID: \"37c586f4-2a43-47e1-85f5-c1faf000f034\") " pod="cattle-system/cattle-cluster-agent-5cd5778bd5-5fhsz"
+./...005/logs/kubelet.log:I1210 14:05:42.131364    3806 pod_startup_latency_tracker.go:102] "Observed pod startup duration" pod="cattle-system/cattle-cluster-agent-5cd5778bd5-5fhsz" podStartSLOduration=2.131321639 pod.CreationTimestamp="2024-12-10 14:05:40 +0000 UTC" firstStartedPulling="0001-01-01 00:00:00 +0000 UTC" lastFinishedPulling="0001-01-01 00:00:00 +0000 UTC" observedRunningTime="2024-12-10 14:05:42.128499715 +0000 UTC m=+685453.304479175" watchObservedRunningTime="2024-12-10 14:05:42.131321639 +0000 UTC m=+685453.307301089"
+
+
+
+I1210 14:12:17
+
+./...005/logs/kubelet.log:I1210 14:12:17.656694    3806 topology_manager.go:210] "Topology Admit Handler" podUID=29614ee5-e61e-4719-ac99-0ccc5afd2bf4 podNamespace="cattle-system" podName="cattle-cluster-agent-5f974d864f-s5xw6"
+./...005/logs/kubelet.log:I1210 14:12:17.761958    3806 reconciler_common.go:253] "operationExecutor.VerifyControllerAttachedVolume started for volume \"kube-api-access-f8c89\" (UniqueName: \"kubernetes.io/projected/29614ee5-e61e-4719-ac99-0ccc5afd2bf4-kube-api-access-f8c89\") pod \"cattle-cluster-agent-5f974d864f-s5xw6\" (UID: \"29614ee5-e61e-4719-ac99-0ccc5afd2bf4\") " pod="cattle-system/cattle-cluster-agent-5f974d864f-s5xw6"
+./...005/logs/kubelet.log:I1210 14:12:17.762147    3806 reconciler_common.go:253] "operationExecutor.VerifyControllerAttachedVolume started for volume \"cattle-credentials\" (UniqueName: \"kubernetes.io/secret/29614ee5-e61e-4719-ac99-0ccc5afd2bf4-cattle-credentials\") pod \"cattle-cluster-agent-5f974d864f-s5xw6\" (UID: \"29614ee5-e61e-4719-ac99-0ccc5afd2bf4\") " pod="cattle-system/cattle-cluster-agent-5f974d864f-s5xw6"
+./...005/logs/kubelet.log:I1210 14:12:18.657683    3806 pod_startup_latency_tracker.go:102] "Observed pod startup duration" pod="cattle-system/cattle-cluster-agent-5f974d864f-s5xw6" podStartSLOduration=1.657600784 pod.CreationTimestamp="2024-12-10 14:12:17 +0000 UTC" firstStartedPulling="0001-01-01 00:00:00 +0000 UTC" lastFinishedPulling="0001-01-01 00:00:00 +0000 UTC" observedRunningTime="2024-12-10 14:12:18.654627621 +0000 UTC m=+685849.830607088" watchObservedRunningTime="2024-12-10 14:12:18.657600784 +0000 UTC m=+685849.833580234"
+
+
+
+I1210 15:20:41
+
+./...005/logs/kubelet.log:I1210 15:20:41.541881    3758 topology_manager.go:212] "Topology Admit Handler" podUID=9443907a-f47d-489d-b620-7ba4e69b4d10 podNamespace="cattle-system" podName="cattle-cluster-agent-5cd5778bd5-xv4lc"
+./...005/logs/kubelet.log:I1210 15:20:41.729973    3758 reconciler_common.go:258] "operationExecutor.VerifyControllerAttachedVolume started for volume \"cattle-credentials\" (UniqueName: \"kubernetes.io/secret/9443907a-f47d-489d-b620-7ba4e69b4d10-cattle-credentials\") pod \"cattle-cluster-agent-5cd5778bd5-xv4lc\" (UID: \"9443907a-f47d-489d-b620-7ba4e69b4d10\") " pod="cattle-system/cattle-cluster-agent-5cd5778bd5-xv4lc"
+./...005/logs/kubelet.log:I1210 15:20:41.730006    3758 reconciler_common.go:258] "operationExecutor.VerifyControllerAttachedVolume started for volume \"kube-api-access-7ggk8\" (UniqueName: \"kubernetes.io/projected/9443907a-f47d-489d-b620-7ba4e69b4d10-kube-api-access-7ggk8\") pod \"cattle-cluster-agent-5cd5778bd5-xv4lc\" (UID: \"9443907a-f47d-489d-b620-7ba4e69b4d10\") " pod="cattle-system/cattle-cluster-agent-5cd5778bd5-xv4lc"
+./...005/logs/kubelet.log:I1210 15:20:42.633403    3758 pod_startup_latency_tracker.go:102] "Observed pod startup duration" pod="cattle-system/cattle-cluster-agent-5cd5778bd5-xv4lc" podStartSLOduration=1.633361641 podCreationTimestamp="2024-12-10 15:20:41 +0000 UTC" firstStartedPulling="0001-01-01 00:00:00 +0000 UTC" lastFinishedPulling="0001-01-01 00:00:00 +0000 UTC" observedRunningTime="2024-12-10 15:20:42.632501117 +0000 UTC m=+616.495489753" watchObservedRunningTime="2024-12-10 15:20:42.633361641 +0000 UTC m=+616.496350272"
+```
+
+### Short Summary
+
+The VM-migration was affected by the relacement of POD `cattle-cluster-agent`, the latter reverted the RQ scaling.
+
+When drain/maintain the node, the `cattle-cluster-agent` PODs may also be affected and replaced to another node, and they run in parallel with VM migration, when new `cattle-cluster-agent` POD/Rancher Manager reverts the RQ after Harvester has scaled it, then `virt-controller` may encounter error `exceeded quota` when creating new VM migration target POD. Sure, it does not always happen.
+
+Following are pre-conditions:
+
+- The ResourceQuota for a given namespace has been used 80+%.
+- A couple of VMs from this namespace are running on a same node.
+- The `cattle-cluster-agent` related PODs are also running on this node.
+
+### Workaround 
+
+#### 1: Increase the resourcequota before ugprade
+
+When cluster is planned for upgrade, check those resourcequota and increase the limit to make spare rooms.
+
+And decrease it after upgrade.
+
+#### 2: Manual fix when it happens
+
+When new migration is blocked due to quota limitation:
+
+(1) If the current `resourcequota` is under the initial value, kill the `cattle-cluster-agent` to get the initial value back.
+
+(2) Stop the blocked migration
+
+When upgrading, a new migration will be re-created and the resourcequota will be scaledup by Harvester.
+
+(3) (Optional) Manual migration the VM to another node
+
+Keep monitoring and repeat (1)(2) until the upgrade is finished.
+
+## More Investigations on VM Migration
+
+### Local Test Environment
 
 Harvester v1.2.1
 
@@ -61,8 +471,6 @@ NAME     STATUS   ROLES                       AGE   VERSION
 harv2    Ready    <none>                      24m   v1.25.9+rke2r1
 harv41   Ready    control-plane,etcd,master   40m   v1.25.9+rke2r1
 ```
-
-## Manual VM Migration Test
 
 ### Create a namespace test-migration and related ResourceQuota
 
@@ -164,8 +572,6 @@ items:
 kind: List
 metadata:
   resourceVersion: ""
-
-
 ```
 
 ### Create a VM with 2 core, 4GI memory
@@ -454,7 +860,6 @@ items:
 kind: List
 metadata:
   resourceVersion: ""
-
 ```
 
 ### Migrate VM and watch resourcequota
@@ -721,7 +1126,7 @@ services.nodeports      0           15
 ```
 
 
-### Another test: trigger 4 VMs migration at same time
+### Test: trigger 4 VMs migration at the same time to simulate node drain/maintenance
 
 All 4 VMs' spec are topped to resourcequota.
 
@@ -821,9 +1226,9 @@ The migration and resourcequota are from kubevirt and k8s, they have different l
 
 The Harvester resourcequota auto-scaling may not fully work as expected.
 
-## Rreproduce the issue
+### Try to rreproduce the issue
 
-### Resource quota and VMs
+#### Resource quota and VMs
 
 3 VMs each with (1C 1Gi), resourcequota is just above the limits.
 
@@ -848,7 +1253,7 @@ services.loadbalancers  0           1
 services.nodeports      0           15
 ```
 
-### Trigger node-maitenance, all 3 VMs are migrated
+#### Trigger node-maitenance, all 3 VMs are migrated
 
 Finally, all are successful.
 
@@ -924,353 +1329,16 @@ But `virt-controller` prints following error log, it waits until the `used` fall
 
 ```
 
-### More
+:::note
 
-The above test VM is very simple. For those production VMs, the migration may take long time and old VM POD also take long time to be evicted and release the resource occupation.
+The above error messages do not live long, the migration is reconciled and successsful finally.
 
+:::
 
-## Another issue: `ResourceQuota` was changed unexpected
+#### More
 
+The above test VM is very simple. For those production VMs, the migration may take long time, if old VM POD also take long time to be evicted and release the resource occupation, then it may be a problem.
 
-first occurance of "exceeded quota" error, it reports :exceeded quota `limits.cpu=30,limits.memory=60Gi`
+We will do more tests to check if this case needs to be addressed.
 
-
-### The migration started on 2024-12-10T14:05:34
-
-```
-2024-12-10T14:05:34:
-
-{"component":"virt-controller","level":"info","msg":"node: lpedge01003, migrations: 0, candidates: 9, selected: 2","pos":"evacuation.go:432","timestamp":"2024-12-10T14:05:34.661377Z"}
-{"component":"virt-controller","level":"info","msg":"node: lpedge01003, migrations: 2, candidates: 7, selected: 2","pos":"evacuation.go:432","timestamp":"2024-12-10T14:05:34.694592Z"}
-
-2024-12-10T14:05:34:
-{"component":"virt-controller","level":"info","msg":"node: lpedge01003, migrations: 6, candidates: 3, selected: 2","pos":"evacuation.go:432","timestamp":"2024-12-10T14:05:34.727790Z"}
-{"component":"virt-controller","level":"info","msg":"node: lpedge01003, migrations: 8, candidates: 1, selected: 1","pos":"evacuation.go:432","timestamp":"2024-12-10T14:05:34.748159Z"}
-
-
-
-{"component":"virt-controller","level":"info","msg":"node: ...005, migrations: 5, candidates: 7, selected: 1","pos":"evacuation.go:432","timestamp":"2024-12-10T14:33:04.772536Z"}
-{"component":"virt-controller","level":"info","msg":"node: ...005, migrations: 6, candidates: 6, selected: 1","pos":"evacuation.go:432","timestamp":"2024-12-10T14:33:04.797739Z"}
-{"component":"virt-controller","level":"info","msg":"node: ...005, migrations: 7, candidates: 5, selected: 1","pos":"evacuation.go:432","timestamp":"2024-12-10T14:33:04.814873Z"}
-{"component":"virt-controller","level":"info","msg":"node: ...005, migrations: 8, candidates: 4, selected: 1","pos":"evacuation.go:432","timestamp":"2024-12-10T14:33:04.831214Z"}
-```
-
-### vm poc...-f6f0abad-vdrzq stated to migrate on 2024-12-10T14:32:09, used: `cpu=28405`; 6*4Gi + above migration ~ 28Gi
-
-```
-{"component":"virt-controller","kind":"","level":"info","msg":"Created migration target pod ...app-dev/virt-launcher-...-f6f0abad-vdrzq-fk9lr with uuid 2d3dd475-c78d-4474-87e4-4e874576d139 for migration kubevirt-evacuation-x4bcq with uuid c315a4ee-0158-4af2-bd07-2a4000398046","name":"...-f6f0abad-vdrzq","namespace":"...-app-dev","pos":"migration.go:717","timestamp":"2024-12-10T14:32:09.596568Z","uid":"8ecd6869-3e1d-4de5-a7fa-2ce389a72b16"}
-```
-
-Harvester POD has no failure log, it meant the scaleup was done successfully.
-
-### vm ...-1231906e-gzrdg encountered error `exceeded quota` on 2024-12-10T14:33:04, used: `cpu=28405`; 6*4Gi + above migration ~ 28Gi , why failed?
-
-```
-{"component":"virt-controller","level":"info","msg":"node: ...01005, migrations: 6, candidates: 6, selected: 1","pos":"evacuation.go:432","timestamp":"2024-12-10T14:33:04.797739Z"}
-
-{"component":"virt-controller","level":"info","msg":"reenqueuing Migration ...-app-dev/kubevirt-evacuation-m226w","pos":"migration.go:233","reason":"failed to create vmi migration target pod: pods \"virt-launcher-...-1231906e-gzrdg-dprq2\" is forbidden: exceeded quota: default-xt5b2, requested: limits.cpu=4015m,limits.memory=8940039936, used: limits.cpu=28405m,limits.memory=62820279552, limited: limits.cpu=30,limits.memory=60Gi","timestamp":"2024-12-10T14:33:04.808638Z"}
-
-...
-```
-
-But now, the limit is reverted to `limits.cpu=30,limits.memory=60Gi`
-
-### the scaled result, looked to be reverted by Rancher
-
-https://github.com/rancher/rancher/blob/b435a2d786c50b03bd1ba7279a6a621ebcd19c84/pkg/controllers/managementuser/resourcequota/resource_quota_sync.go#L114C26-L114C45
-
-
-### evidence 1: ResourceQuota was updated by `rancher`, and the time-stamp was after the above migration
-
-It means Rancher update it several times, and `2024-12-10T15:36:44Z` was the last updating time.
-
-Last updating time from Harvester `2024-12-10T16:18:37Z`.
-
-```
-- apiVersion: v1
-  kind: ResourceQuota
-  metadata:
-    creationTimestamp: "2024-07-24T09:40:09Z"
-    generateName: default-
-    labels:
-      cattle.io/creator: norman
-      resourcequota.management.cattle.io/default-resource-quota: "true"
-    managedFields:
-    - apiVersion: v1
-      fieldsType: FieldsV1
-      fieldsV1:
-        f:metadata:
-          f:generateName: {}
-          f:labels:
-            .: {}
-            f:cattle.io/creator: {}
-            f:resourcequota.management.cattle.io/default-resource-quota: {}
-        f:spec:
-          f:hard:
-            .: {}
-            f:configmaps: {}
-            f:persistentvolumeclaims: {}
-            f:pods: {}
-            f:replicationcontrollers: {}
-            f:requests.cpu: {}
-            f:requests.memory: {}
-            f:requests.storage: {}
-            f:secrets: {}
-            f:services: {}
-            f:services.loadbalancers: {}
-            f:services.nodeports: {}
-      manager: rancher
-      operation: Update
-      time: "2024-12-10T15:36:44Z"
-    - apiVersion: v1
-      fieldsType: FieldsV1
-      fieldsV1:
-        f:spec:
-          f:hard:
-            f:limits.cpu: {}
-            f:limits.memory: {}
-      manager: harvester
-      operation: Update
-      time: "2024-12-10T16:18:37Z"
-    - apiVersion: v1
-      fieldsType: FieldsV1
-      fieldsV1:
-        f:status:
-          f:hard:
-            .: {}
-            f:configmaps: {}
-            f:limits.cpu: {}
-            f:limits.memory: {}
-            f:persistentvolumeclaims: {}
-            f:pods: {}
-            f:replicationcontrollers: {}
-            f:requests.cpu: {}
-            f:requests.memory: {}
-            f:requests.storage: {}
-            f:secrets: {}
-            f:services: {}
-            f:services.loadbalancers: {}
-            f:services.nodeports: {}
-          f:used:
-            .: {}
-            f:configmaps: {}
-            f:limits.cpu: {}
-            f:limits.memory: {}
-            f:pods: {}
-            f:replicationcontrollers: {}
-            f:requests.cpu: {}
-            f:requests.memory: {}
-            f:services: {}
-            f:services.loadbalancers: {}
-            f:services.nodeports: {}
-      manager: kube-controller-manager
-      operation: Update
-      subresource: status
-      time: "2024-12-10T16:19:31Z"
-```
-
-
-### evidence 2: ...-app-dev has following error, the `limits.cpu=26`
-
-
-```
-...-app-dev/kubevirt-evacuation-dfp6
-
-error:
-
-exceeded quota: default-4tmmk, 
-
-requested: limits.cpu=4015m,    limits.memory= 8,940,039,936,
-used:      limits.cpu=28505m,   limits.memory=62,900,279,552,
-limited:   limits.cpu=26,       limits.memory=54,242,646Ki",      "timestamp":"2024-12-10T14:36:47.533782Z
-```
-
-How? Rancher reverted the quota `limits.cpu=30`, and after migration, Harvester scaleddown it to `30-4=26 Core(each VM is 4 Core)`.
-
-
-### Test 1: manually kill cattle-cluster-agent pod, Rancher Manager reverts the RQ change
-
-1. create a project and namespace test1sub1 with RQ
-
-```
-$kubectl get namespaces test1sub1 -oyaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  annotations:
-    cattle.io/status: '{"Conditions":[{"Type":"ResourceQuotaValidated","Status":"True","Message":"","LastUpdateTime":"2024-12-16T12:37:18Z"},{"Type":"ResourceQuotaInit","Status":"True","Message":"","LastUpdateTime":"2024-12-16T12:37:18Z"},{"Type":"InitialRolesPopulated","Status":"True","Message":"","LastUpdateTime":"2024-12-16T12:37:18Z"}]}'
-    field.cattle.io/containerDefaultResourceLimit: '{}'
-    field.cattle.io/projectId: c-m-nwmsdwdc:p-snkkp
-    field.cattle.io/resourceQuota: '{"limit":{"limitsCpu":"2000m"}}'
-    lifecycle.cattle.io/create.namespace-auth: "true"
-  creationTimestamp: "2024-12-16T12:37:16Z"
-  finalizers:
-  - controller.cattle.io/namespace-auth
-  labels:
-    field.cattle.io/projectId: p-snkkp
-    kubernetes.io/metadata.name: test1sub1
-  name: test1sub1
-  resourceVersion: "357044"
-  uid: f1838a3e-f1d7-42de-b322-b7f593efadba
-spec:
-  finalizers:
-  - kubernetes
-status:
-  phase: Active
-```
-
-2. The RQ is as expected
-
-```
-$kubectl get resourcequota -n test1sub1 default-k4n2w -oyaml
-apiVersion: v1
-kind: ResourceQuota
-metadata:
-  creationTimestamp: "2024-12-16T12:37:17Z"
-  generateName: default-
-  labels:
-    cattle.io/creator: norman
-    resourcequota.management.cattle.io/default-resource-quota: "true"
-  name: default-k4n2w
-  namespace: test1sub1
-  resourceVersion: "357030"
-  uid: b73ef61c-a946-4cca-ae7a-71e26d5e9d42
-spec:
-  hard:
-    limits.cpu: "2"
-status:
-  hard:
-    limits.cpu: "2"
-  used:
-    limits.cpu: "0"
-harv21:/home/rancher # kk edit resourcequota -n test1sub1 default-k4n2w
-resourcequota/default-k4n2w edited
-```
-
-3. Update he RQ from kubectl
-
-```
-$kubectl get resourcequota -n test1sub1 default-k4n2w -oyaml
-apiVersion: v1
-kind: ResourceQuota
-metadata:
-  creationTimestamp: "2024-12-16T12:37:17Z"
-  generateName: default-
-  labels:
-    cattle.io/creator: norman
-    resourcequota.management.cattle.io/default-resource-quota: "true"
-  name: default-k4n2w
-  namespace: test1sub1
-  resourceVersion: "361636"
-  uid: b73ef61c-a946-4cca-ae7a-71e26d5e9d42
-spec:
-  hard:
-    limits.cpu: "3"
-status:
-  hard:
-    limits.cpu: "3"
-  used:
-    limits.cpu: "0"
-    
-$kubectl get resourcequota -n test1sub1 default-k4n2w -oyaml
-apiVersion: v1
-kind: ResourceQuota
-metadata:
-  creationTimestamp: "2024-12-16T12:37:17Z"
-  generateName: default-
-  labels:
-    cattle.io/creator: norman
-    resourcequota.management.cattle.io/default-resource-quota: "true"
-  name: default-k4n2w
-  namespace: test1sub1
-  resourceVersion: "361636"
-  uid: b73ef61c-a946-4cca-ae7a-71e26d5e9d42
-spec:
-  hard:
-    limits.cpu: "3"
-status:
-  hard:
-    limits.cpu: "3"
-  used:
-    limits.cpu: "0"
-```
-
-
-4. Kill `cattle-cluster-agent` POD, the RQ is reverted.
-
-```
-kk delete pod -n cattle-system cattle-cluster-agent-769854d75d-lf9d9 --force
-
-
-$kubectl get resourcequota -n test1sub1 default-k4n2w -oyaml
-apiVersion: v1
-kind: ResourceQuota
-metadata:
-  creationTimestamp: "2024-12-16T12:37:17Z"
-  generateName: default-
-  labels:
-    cattle.io/creator: norman
-    resourcequota.management.cattle.io/default-resource-quota: "true"
-  name: default-k4n2w
-  namespace: test1sub1
-  resourceVersion: "363918"
-  uid: b73ef61c-a946-4cca-ae7a-71e26d5e9d42
-spec:
-  hard:
-    limits.cpu: "2"
-status:
-  hard:
-    limits.cpu: "2"
-  used:
-    limits.cpu: "0"
-```
-
-
-### Test 2: Logs from SB show `cattle-cluster-agent*` POD started several times in-between above VM migration time window
-
-
-In following time `I1210 14:05:40, I1210 14:12:17, I1210 15:20:41`, the `cattle-cluster-agent*` POD restarted.
-
-And per the test, it had synced the resourcequota and reverted the values even though Harvester assumed they shoud have been scaled.
-
-
-```
-I1210 14:05:40
-
-/...005/logs/kubelet.log:I1210 14:05:40.506853    3806 topology_manager.go:210] "Topology Admit Handler" podUID=37c586f4-2a43-47e1-85f5-c1faf000f034 podNamespace="cattle-system" podName="cattle-cluster-agent-5cd5778bd5-5fhsz"
-./...005/logs/kubelet.log:I1210 14:05:40.612266    3806 reconciler_common.go:253] "operationExecutor.VerifyControllerAttachedVolume started for volume \"kube-api-access-c2qfn\" (UniqueName: \"kubernetes.io/projected/37c586f4-2a43-47e1-85f5-c1faf000f034-kube-api-access-c2qfn\") pod \"cattle-cluster-agent-5cd5778bd5-5fhsz\" (UID: \"37c586f4-2a43-47e1-85f5-c1faf000f034\") " pod="cattle-system/cattle-cluster-agent-5cd5778bd5-5fhsz"
-./...005/logs/kubelet.log:I1210 14:05:40.612332    3806 reconciler_common.go:253] "operationExecutor.VerifyControllerAttachedVolume started for volume \"cattle-credentials\" (UniqueName: \"kubernetes.io/secret/37c586f4-2a43-47e1-85f5-c1faf000f034-cattle-credentials\") pod \"cattle-cluster-agent-5cd5778bd5-5fhsz\" (UID: \"37c586f4-2a43-47e1-85f5-c1faf000f034\") " pod="cattle-system/cattle-cluster-agent-5cd5778bd5-5fhsz"
-./...005/logs/kubelet.log:I1210 14:05:42.131364    3806 pod_startup_latency_tracker.go:102] "Observed pod startup duration" pod="cattle-system/cattle-cluster-agent-5cd5778bd5-5fhsz" podStartSLOduration=2.131321639 pod.CreationTimestamp="2024-12-10 14:05:40 +0000 UTC" firstStartedPulling="0001-01-01 00:00:00 +0000 UTC" lastFinishedPulling="0001-01-01 00:00:00 +0000 UTC" observedRunningTime="2024-12-10 14:05:42.128499715 +0000 UTC m=+685453.304479175" watchObservedRunningTime="2024-12-10 14:05:42.131321639 +0000 UTC m=+685453.307301089"
-
-
-
-I1210 14:12:17
-
-./...005/logs/kubelet.log:I1210 14:12:17.656694    3806 topology_manager.go:210] "Topology Admit Handler" podUID=29614ee5-e61e-4719-ac99-0ccc5afd2bf4 podNamespace="cattle-system" podName="cattle-cluster-agent-5f974d864f-s5xw6"
-./...005/logs/kubelet.log:I1210 14:12:17.761958    3806 reconciler_common.go:253] "operationExecutor.VerifyControllerAttachedVolume started for volume \"kube-api-access-f8c89\" (UniqueName: \"kubernetes.io/projected/29614ee5-e61e-4719-ac99-0ccc5afd2bf4-kube-api-access-f8c89\") pod \"cattle-cluster-agent-5f974d864f-s5xw6\" (UID: \"29614ee5-e61e-4719-ac99-0ccc5afd2bf4\") " pod="cattle-system/cattle-cluster-agent-5f974d864f-s5xw6"
-./...005/logs/kubelet.log:I1210 14:12:17.762147    3806 reconciler_common.go:253] "operationExecutor.VerifyControllerAttachedVolume started for volume \"cattle-credentials\" (UniqueName: \"kubernetes.io/secret/29614ee5-e61e-4719-ac99-0ccc5afd2bf4-cattle-credentials\") pod \"cattle-cluster-agent-5f974d864f-s5xw6\" (UID: \"29614ee5-e61e-4719-ac99-0ccc5afd2bf4\") " pod="cattle-system/cattle-cluster-agent-5f974d864f-s5xw6"
-./...005/logs/kubelet.log:I1210 14:12:18.657683    3806 pod_startup_latency_tracker.go:102] "Observed pod startup duration" pod="cattle-system/cattle-cluster-agent-5f974d864f-s5xw6" podStartSLOduration=1.657600784 pod.CreationTimestamp="2024-12-10 14:12:17 +0000 UTC" firstStartedPulling="0001-01-01 00:00:00 +0000 UTC" lastFinishedPulling="0001-01-01 00:00:00 +0000 UTC" observedRunningTime="2024-12-10 14:12:18.654627621 +0000 UTC m=+685849.830607088" watchObservedRunningTime="2024-12-10 14:12:18.657600784 +0000 UTC m=+685849.833580234"
-
-
-
-I1210 15:20:41
-
-./...005/logs/kubelet.log:I1210 15:20:41.541881    3758 topology_manager.go:212] "Topology Admit Handler" podUID=9443907a-f47d-489d-b620-7ba4e69b4d10 podNamespace="cattle-system" podName="cattle-cluster-agent-5cd5778bd5-xv4lc"
-./...005/logs/kubelet.log:I1210 15:20:41.729973    3758 reconciler_common.go:258] "operationExecutor.VerifyControllerAttachedVolume started for volume \"cattle-credentials\" (UniqueName: \"kubernetes.io/secret/9443907a-f47d-489d-b620-7ba4e69b4d10-cattle-credentials\") pod \"cattle-cluster-agent-5cd5778bd5-xv4lc\" (UID: \"9443907a-f47d-489d-b620-7ba4e69b4d10\") " pod="cattle-system/cattle-cluster-agent-5cd5778bd5-xv4lc"
-./...005/logs/kubelet.log:I1210 15:20:41.730006    3758 reconciler_common.go:258] "operationExecutor.VerifyControllerAttachedVolume started for volume \"kube-api-access-7ggk8\" (UniqueName: \"kubernetes.io/projected/9443907a-f47d-489d-b620-7ba4e69b4d10-kube-api-access-7ggk8\") pod \"cattle-cluster-agent-5cd5778bd5-xv4lc\" (UID: \"9443907a-f47d-489d-b620-7ba4e69b4d10\") " pod="cattle-system/cattle-cluster-agent-5cd5778bd5-xv4lc"
-./...005/logs/kubelet.log:I1210 15:20:42.633403    3758 pod_startup_latency_tracker.go:102] "Observed pod startup duration" pod="cattle-system/cattle-cluster-agent-5cd5778bd5-xv4lc" podStartSLOduration=1.633361641 podCreationTimestamp="2024-12-10 15:20:41 +0000 UTC" firstStartedPulling="0001-01-01 00:00:00 +0000 UTC" lastFinishedPulling="0001-01-01 00:00:00 +0000 UTC" observedRunningTime="2024-12-10 15:20:42.632501117 +0000 UTC m=+616.495489753" watchObservedRunningTime="2024-12-10 15:20:42.633361641 +0000 UTC m=+616.496350272"
-```
-
-### Short summary
-
-The VM-migration was affected by the relacement of POD `cattle-cluster-agent`, the latter reverted the RQ scaling.
-
-When drain/maintain the node, the `cattle-cluster-agent` PODs may also be affected and replaced to another node, and they run in parallel with VM migration, when new `cattle-cluster-agent` POD/Rancher Manager reverts the RQ after Harvester has scalled it, then the new VM migration target POD may encounter error `exceeded quota`. Sure, it does not always happen.
-
-When following conditions are met, the issue may happen:
-
-- The ResourceQuota for a given namespace has been used 80+%.
-- A couple of VMs from this namespace are running on a same node.
-- The `cattle-cluster-agent` related PODs are also running on this node.
-
-When encountering this issue, manual stop the VM migration and trigger the migration again can solve it.
+Enhancement: [Improve the resourcequota autoscaling](https://github.com/harvester/harvester/issues/7161)
