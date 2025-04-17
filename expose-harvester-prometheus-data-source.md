@@ -4,11 +4,13 @@ You plan to expose the Harvester prometheus datasource from the embedded [ranche
 
 :::note
 
-Sugguest to use a new IP (not Harvester VIP, not any NODE IP) for exposing the prometheus data source, to avoid affection other services.
+- Sugguest to use a new IP (not Harvester VIP, not any NODE IP) for exposing the prometheus data source, to avoid affecting other services
 
-The current solution exposes only via http endpoint.
+- The current solution exposes only via http endpoint.
 
-Enable the [rancher-monitoring addon](https://docs.harvesterhci.io/v1.3/advanced/addons) on Harvester.
+- Enable the [rancher-monitoring addon](https://docs.harvesterhci.io/v1.3/advanced/addons) on Harvester.
+
+- Think twice if this IP is exposed to external directly.
 
 :::
 
@@ -81,9 +83,9 @@ prometheus-expose-mm7bd   IPv4          9090    10.52.0.144   4m54s
 Access the metrics from http endpoint.
 
 ```
-http://192.168.122.138:9090/metrics
+http://SERVICE_LB_IP:9090/metrics
 
 ```
 
-![prometheus-metrics](./images/prometheus-metrics.png)
+![prometheus-metrics](./resources/prometheus-metrics.png)
 
