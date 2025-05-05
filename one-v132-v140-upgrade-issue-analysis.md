@@ -77,6 +77,64 @@ The reason is, quite ticky and rarely, the node `*-01` has no label `harvesterhc
 
 The node `*-04` was added to the cluster on `"2025-02-06T08:38:27Z"`, but failed to generate a corresponding `machine` object, hence the node object has no chance to be labeled with `harvesterhci.io/managed: "true"`.
 
+### Workaround
+
+#### Remove the latest upgrade object
+
+Follow https://docs.harvesterhci.io/v1.3/upgrade/troubleshooting/#start-over-an-upgrade
+
+List and delete the latest upgrade CR object, wait until it is gone
+
+Example
+
+```
+# list the on-going upgrade
+$ kubectl get upgrade.harvesterhci.io -n harvester-system -l harvesterhci.io/latestUpgrade=true
+NAME                 AGE
+hvst-upgrade-9gmg2   10m
+
+# delte the upgrade
+$ kubectl delete upgrade.harvesterhci.io/hvst-upgrade-9gmg2 -n harvester-system
+```
+#### Resume all managedcharts
+
+Run below shell script to resume all managedcharts, which were paused by the upgrade.
+
+https://github.com/harvester/harvester/blob/939857e93c3d97de47f497e719ff219fe4df81ca/package/upgrade/upgrade_manifests.sh#L1358
+
+```
+cat > resumeallcharts.sh << 'FOE'
+resume_all_charts() {
+
+  local patchfile="/tmp/charttmp.yaml"
+
+  cat >"$patchfile" <<EOF
+spec:
+  paused: false
+EOF
+  echo "the to-be-patched file"
+  cat "$patchfile"
+
+  local charts="harvester harvester-crd rancher-monitoring-crd rancher-logging-crd"
+
+  for chart in $charts; do
+    echo "unapuse managedchart $chart"
+    kubectl patch managedcharts.management.cattle.io $chart -n fleet-local --patch-file "$patchfile" --type merge || echo "failed, check reason"
+  done
+
+  rm "$patchfile"
+}
+
+resume_all_charts
+
+FOE
+
+chmod +x ./resumeallcharts.sh
+
+./resumeallcharts.sh
+
+```
+
 ### Enhancement
 
 The pre-flight check should also detect this mis-matching of `node` and `machine`.
@@ -91,6 +149,7 @@ Following log is observed on pod `system-upgrade-controller`
 2025-01-31T10:16:17.469113115Z time="2025-01-31T10:16:17Z" level=error msg="error syncing 'cattle-system/sync-additional-ca': handler system-upgrade-controller: secrets \"harvester-additional-ca\" not found, handler system-upgrade-controller: failed to create cattle-system/apply-sync-additional-ca-on-*-01-with- batch/v1, Kind=Job for system-upgrade-controller cattle-system/sync-additional-ca: Job.batch \"apply-sync-additional-ca-on-*-01-with-\" is invalid: [metadata.name: Invalid value: \"apply-sync-additional-ca-on-*-01-with-\": a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*'), spec.template.labels: Invalid value: \"apply-sync-additional-ca-on-*-01-with-\": a valid label must be an empty string or consist of alphanumeric characters, '-', '_' or '.', and must start and end with an alphanumeric character (e.g. 'MyValue',  or 'my_value',  or '12345', regex used for validation is '(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?')], requeuing"
 ```
 
+```
 node 01: creationTimestamp: "2025-01-31T10:12:22Z"
 
 node 02: creationTimestamp: "2025-01-31T10:44:58Z"
@@ -102,10 +161,9 @@ node 04: creationTimestamp: "2025-02-06T08:38:27Z"
 node 05: creationTimestamp: "2025-02-03T07:06:42Z"
 
 node 06: creationTimestamp: "2025-01-31T12:44:11Z"
-
+```
 
 ## Why node 03 is softly `Down` and 04 was triggered promotion? TBD
-
 
 ### node 03 kubelet log:
 
