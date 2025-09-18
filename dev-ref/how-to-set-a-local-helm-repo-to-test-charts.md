@@ -1,8 +1,13 @@
 
+## About harvester-cloud-provider chart
 
-## Update chart
+The chart is published to rke2 and rancher.
 
-Get the chart, and per https://github.com/rancher/charts/blob/dev-v2.12/charts/harvester-cloud-provider/107.0.1%2Bup0.2.10/Chart.yaml to change local to let it meet Rancher's format.
+When developing & release new chart, how to do the integration test?
+
+### Update chart
+
+Get your prepared chart, and per https://github.com/rancher/charts/blob/dev-v2.12/charts/harvester-cloud-provider/107.0.1%2Bup0.2.10/Chart.yaml to change local to let it meet Rancher's format.
 
 ```
 rancher@email:/go/src/github.com/w13915984028/harvester-charts/charts$ git diff HEAD~1 
@@ -80,14 +85,15 @@ index c286fef..a2f3e2b 100644
 +- name: harvester
 +name: harvester-cloud-provider
 +type: application
-+version: 107.0.2+up0.2.11
++version: 107.0.2+up0.2.11         // name it to any version you want
 
 ```
 
+### Package local chart
 
-## Package local chart
+A target chart will be packed.
 
-
+```
 rancher@email:/go/src/github.com/w13915984028/harvester-charts/charts$ helm package harvester-cloud-provider/
 
 Successfully packaged chart and saved it to: /go/src/github.com/w13915984028/harvester-charts/charts/harvester-cloud-provider-107.0.2+up0.2.11.tgz
@@ -95,16 +101,15 @@ Successfully packaged chart and saved it to: /go/src/github.com/w13915984028/har
 rancher@email:/go/src/github.com/w13915984028/harvester-charts/charts$ ls
 
 harvester-cloud-provider-107.0.2+up0.2.11.tgz 
+```
 
-
-## Create repo index.yaml
+### Create repo index.yaml
 
 per https://helm.sh/docs/topics/chart_repository/
 
 e.g., put all related charts under /home/rancher/chart-repo
 
 run command `helm repo index charts/` to generate `index.yaml`
-
 
 ```
 rancher@email:~/chart-repo$ helm repo index charts/
@@ -152,14 +157,16 @@ entries:
 generated: "2025-08-29T16:14:48.169981119Z"
 ```
 
-## Serve the repo
+### Serve the repo
+
+A simple http server is ok.
 
 ```
 rancher@email:~/chart-repo/charts$ python3 -m http.server
 Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/) ...
 ```
 
-log by remote rancher
+logs
 
 ```
 rancher@email:~/chart-repo/charts$ python3 -m http.server
@@ -170,17 +177,19 @@ Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/) ...
 192.168.122.163 - - [29/Aug/2025 16:21:05] "GET /harvester-cloud-provider-107.0.2+up0.2.11.tgz HTTP/1.1" 200 -
 ```
 
-## Add repository on Rancher manager
+## Test the new chart on Rancher Manager via guest cluster upgrade
+
+Before the new chart is available on Rancher repo, the local repo is a candidate to test the new chart.
+
+### Add repository on Rancher manager
 
 From a path like below: `guest cluster -> Apps -> Repositories`
 
+Add your own repo 
+
 e.g. local repo `http://192.168.122.191:8000`
 
-
-Add your own repo and select `Refresh`
-
-https://192.168.122.191/dashboard/c/c-m-rtppw764/apps/catalog.cattle.io.clusterrepo
-
+The click `Refresh`, a successfuly run will have a log on above http server.
 
 server log:
 ```
@@ -188,12 +197,13 @@ server log:
 
 ```
 
-## Find the chart to upgrade
+### Find the chart to upgrade
 
-Go to `Apps`, search `Harvester-cloud` it will show a new version from your local chart repo
+Go to `Apps`, search `Harvester-cloud` it will show a new version from your local chart repo. Click the `upgrade` and select your version.
 
-## Upgrade log
+### Upgrade log
 
+Rancher manager normally pop up a window to show the helm chart upgrade log directly.
 
 ```
 helm upgrade --history-max=5 --install=true --labels=catalog.cattle.io/cluster-repo-name=wj-local --namespace=kube-system --timeout=10m0s --values=/home/shell/helm/values-harvester-cloud-provider-107.0.2-up0.2.11.yaml --version=107.0.2+up0.2.11 --wait=true harvester-cloud-provider /home/shell/helm/harvester-cloud-provider-107.0.2-up0.2.11.tgz
@@ -209,7 +219,9 @@ SUCCESS: helm upgrade --history-max=5 --install=true --labels=catalog.cattle.io/
 ---------------------------------------------------------------------
 ```
 
-## Kube-vip log
+### Kube-vip log
+
+Check new `kube-vip` pod log, it shows it's version in the first line.
 
 ```
 > kubectl logs -n kube-system kube-vip-xfrmn
@@ -245,7 +257,9 @@ I0829 16:21:17.443357       1 leaderelection.go:271] successfully acquired lease
 
 ```
 
-## Deploy nginx to test
+### Deploy nginx to test
+
+On Rancher manager, enter the guest cluster, click `>_` menu to pop up `kubectl` window, then run following command, which deploys `nginx` on guest cluster.
 
 `kubectl apply -f https://k8s.io/examples/application/deployment.yaml`
 
@@ -255,9 +269,26 @@ label key:
         app: nginx
 ```
 
+### LB type service
+
+Create LB type service on guest cluster, it will normally get IP from Harvester cluster provider
 
 
-## push tag to ttl.sh
+## Test the new chart on Rancher Manager via guest cluster creation
+
+When creating a new guest cluster on Rancher Manager, how to set it use the above local harvester-cloud-provider chart? TBD.
+
+## Test Harester-cloud-provider new image
+
+In case harester-cloud-provider app plans to release new image, test it via below steps:
+
+:::note
+
+It simplify things, if you don't have dockerhub or other hubs access. ttl.sh is free and anonymous.
+
+:::
+
+### push tag to ttl.sh
 
 build pc:
 
@@ -273,13 +304,9 @@ The push refers to repository [ttl.sh/harvester-cloud-provider]
 1h: digest: sha256:98dcfcd30f264aeabba7d2dd286559c7716890933c2e46bc6684f1ed3f3d4a6a size: 947
 ```
 
-
-## pull image tag from ttl.sh
-
-
+### pull image tag from ttl.sh
 
 ```
-
 harv41:/home/rancher # docker pull ttl.sh/harvester-cloud-provider:1h
 ttl.sh/harvester-cloud-provider:1h:                                               resolved       |++++++++++++++++++++++++++++++++++++++| 
 manifest-sha256:98dcfcd30f264aeabba7d2dd286559c7716890933c2e46bc6684f1ed3f3d4a6a: done           |++++++++++++++++++++++++++++++++++++++| 
@@ -293,10 +320,13 @@ elapsed: 8.3 s                                                                  
 ttl.sh/harvester-cloud-provider                                    1h                                                     98dcfcd30f26    About a minute ago    linux/amd64    136.0 MiB    39.5 MiB
 ```
 
+### test new image on guest cluster
 
-## test new image
+In guest cluster, run `kubectl edit deployment -n kube-system harvester-cloud-provider` to set the new image tag.
 
-kubectl edit deployment -n kube-system harvester-cloud-provider
-
+```
         image: ttl.sh/harvester-cloud-provider:1h
         imagePullPolicy: IfNotPresent
+```
+
+System will download the new container image from ttl.sh and run it.
