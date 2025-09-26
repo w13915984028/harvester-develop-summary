@@ -231,3 +231,10 @@ The limitation does not exist on Harvester v1.4.2 and later versions.
 
 [Harvester setting additional-guest-memory-overhead-ratio](https://docs.harvesterhci.io/v1.4/advanced/index#additional-guest-memory-overhead-ratio)
 
+
+upstream source code
+
+https://github.com/kubevirt/kubevirt/blob/9d0345041704fe0d12a7cbb8eeecb2823d1cb703/pkg/virt-controller/services/template.go#L114-L123
+
+https://github.com/kubevirt/kubevirt/blob/9d0345041704fe0d12a7cbb8eeecb2823d1cb703/pkg/virt-controller/services/renderresources.go#L401-L419
+
