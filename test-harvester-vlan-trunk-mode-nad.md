@@ -30,7 +30,7 @@ On Harvester
 
 1. Create 2 trunk nads: nad1 `vid 1, 100..200` is attached to `mgmt cluster network`, nad2 `vid 1, 400..600` is attached to `cn2 cluster network`.
 
-2. Create one VM which runs `harvester-v1.6.0.iso`, attaches to nad1, nad2.
+2. Create one VM which runs `harvester-v1.7.0.iso`, attaches to nad1, nad2.
 
 The `trunk mode` nad allows the guest Harvester to provision multi vlan ids to it's VM too.
 
@@ -212,6 +212,97 @@ cn2-bo            1 PVID Egress Untagged
                   88
 cn2-br            1 PVID Egress Untagged
 ```
+
+### keep user manually configured vlans
+
+e.g. user adds two manually configured vlan id 88, 99 on mgmt network for some customized usage.
+
+```
+bridge vlan add vid 88 dev mgmt-bo
+bridge vlan add vid 88 dev mgmt-br self
+ip link add link mgmt-br mgmt-br.88 up type vlan id 88
+
+
+bridge vlan add vid 99 dev mgmt-bo
+bridge vlan add vid 99 dev mgmt-br self
+ip link add link mgmt-br mgmt-br.99 up type vlan id 99
+
+harv21:/home/rancher # ip link | grep mgmt
+2: ens3: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master mgmt-bo state UP mode DEFAULT group default qlen 1000
+4: mgmt-br: <BROADCAST,MULTICAST,PROMISC,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DEFAULT group default qlen 1000
+5: mgmt-bo: <BROADCAST,MULTICAST,MASTER,UP,LOWER_UP> mtu 1500 qdisc noqueue master mgmt-br state UP mode DEFAULT group default qlen 1000
+91: mgmt-br.88@mgmt-br: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DEFAULT group default qlen 1000
+```
+
+
+current vids:
+
+```
+harv21:/home/rancher # bridge vlan show
+port              vlan-id  
+mgmt-br           1 PVID Egress Untagged
+                  88
+                  99
+mgmt-bo           1 PVID Egress Untagged
+                  77
+                  88
+                  99
+                  100
+```
+
+create trunk nad vid [80..99]
+
+vids 80 to 99 are added to `mgmt-bo`
+
+```
+harv21:/home/rancher # bridge vlan show
+port              vlan-id  
+mgmt-br           1 PVID Egress Untagged
+                  88
+                  99
+mgmt-bo           1 PVID Egress Untagged
+                  77
+                  80
+                  81
+                  82
+                  83
+                  84
+                  85
+                  86
+                  87
+                  88
+                  89
+                  90
+                  91
+                  92
+                  93
+                  94
+                  95
+                  96
+                  97
+                  98
+                  99
+                  100
+```
+
+remove above trunk nad
+
+all those manually added vids are still kept, they are not accidentlly removed
+
+```
+harv21:/home/rancher # bridge vlan show
+port              vlan-id  
+mgmt-br           1 PVID Egress Untagged
+                  88
+                  99
+mgmt-bo           1 PVID Egress Untagged
+                  77
+                  88
+                  99
+                  100
+```
+
+this works for both `mgmt` and secondary clusternetwork.
 
 ## test vlan trunk mode nad on mgmt cluster network
 
