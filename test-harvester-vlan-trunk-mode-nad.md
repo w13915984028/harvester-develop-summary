@@ -600,62 +600,295 @@ listening on cn2-bo, link-type EN10MB (Ethernet), snapshot length 262144 bytes
 
 The broadcast packets are on expected vlan `77`.
 
+## Test Vlan Trunk mode NAD on KVM Environment
 
-## Additional
+The vlan trunk mode network can be tested on KVM environment seamlessly via following steps.
 
-### Setup the test env on KVM which provisions Harvester NODE
+Suppose you create two VMs, one is used as the Harvester Host Node, another one is as test machine.
 
-When KVM VM is used to work as Harvester NODE.
+### Add a second network `vribr1` via tool like `virtual machine manager`
 
-1. Add addtional NIC to vm, and attached to a KVM network like `virbr1`
+The `forwarding` is by default also `NAT`.
 
-2. When NODE VM starts, the host adds new link like `vnet2`, `vnet3` to the default `virbr0` and new network bridge `virbr1`.
+:::note
 
-```
-node: in the kvm test env, you need to:
+Disable the `DHCP` on `virbr1`, to avoid potential dhcp race/conflict when KVM VM boots.
 
-15: vnet0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel master virbr0 state UNKNOWN mode DEFAULT group default qlen 1000
-    link/ether fe:54:00:03:3a:e4 brd ff:ff:ff:ff:ff:ff
-16: vnet1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel master virbr1 state UNKNOWN mode DEFAULT group default qlen 1000
-    link/ether fe:54:00:9c:83:1d brd ff:ff:ff:ff:ff:ff
-17: vnet2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel master virbr0 state UNKNOWN mode DEFAULT group default qlen 1000
-    link/ether fe:54:00:e1:2e:23 brd ff:ff:ff:ff:ff:ff
-18: vnet3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel master virbr1 state UNKNOWN mode DEFAULT group default qlen 1000
-    link/ether fe:54:00:b2:4b:0e brd ff:ff:ff:ff:ff:ff
-```
-
-
-3. Let your test env allow vid like `77` pass
+:::
 
 ```
-$ sudo -i bridge vlan add dev vnet1 vid 77
-$ sudo -i bridge vlan add dev vnet3 vid 77
+root@jianwang-pc:~# virsh net-list 
+ Name      State    Autostart   Persistent
+--------------------------------------------
+ default   active   yes         yes
+ virbr1    active   yes         yes
+
+root@jianwang-pc:~# virsh net-dumpxml virbr1 
+<network connections='2'>
+  <name>virbr1</name>
+  <uuid>29e87ad2-e60e-4891-9c72-9dd0f20ce242</uuid>
+  <forward mode='nat'>
+    <nat>
+      <port start='1024' end='65535'/>
+    </nat>
+  </forward>
+  <bridge name='virbr1' stp='on' delay='0'/>
+  <mac address='52:54:00:2f:f6:5b'/>
+  <domain name='virbr1'/>
+  <ip address='192.168.100.1' netmask='255.255.255.0'>
+  </ip>
+</network>
+
+```
+
+```
 $ bridge vlan show
 
-port	vlan ids
 virbr0	 1 PVID Egress Untagged
 
-virbr0-nic	 1 PVID Egress Untagged
-
 virbr1	 1 PVID Egress Untagged
+```
 
-virbr1-nic	 1 PVID Egress Untagged
+### Set up two VMs
 
-docker0	 1 PVID Egress Untagged
+Set up two VMs, both add two NICs, one is attached to `default(virbr0)`, another one is attached to `virbr1`.
 
-br-51ec8482a208	 1 PVID Egress Untagged
+After two VMs are up, from your host PC, it shows following four additional `vnet` devices, they are attached to the above two VMs.
 
-br-ab141905edae	 1 PVID Egress Untagged
+```
+19: vnet1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel master virbr0 state UNKNOWN mode DEFAULT group default qlen 1000
+    link/ether fe:54:00:6e:5c:2a brd ff:ff:ff:ff:ff:ff
+20: vnet2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel master virbr1 state UNKNOWN mode DEFAULT group default qlen 1000
+    link/ether fe:54:00:e3:d8:53 brd ff:ff:ff:ff:ff:ff
+22: vnet0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel master virbr0 state UNKNOWN mode DEFAULT group default qlen 1000
+    link/ether fe:54:00:ed:f1:a7 brd ff:ff:ff:ff:ff:ff
+23: vnet3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel master virbr1 state UNKNOWN mode DEFAULT group default qlen 1000
+    link/ether fe:54:00:c4:1d:a8 brd ff:ff:ff:ff:ff:ff
+```
+
+### Set up host bridge and vlan
+
+On your host PC, run below to set the `virbr1` vlan filtering. Set the attached `vnet*` on `virbr1` to bypass VLANS like `50, 60`.
+
+```
+$ ip link set virbr1 type bridge vlan_filtering 1
+
+$ bridge vlan add dev vnet2 vid 50  // add all the wanted vids from here
+$ bridge vlan add dev vnet2 vid 60
+
+$ bridge vlan add dev vnet3 vid 50
+$ bridge vlan add dev vnet3 vid 60
+
+
+$ bridge vlan show
+
+vnet1	 1 PVID Egress Untagged
+
+vnet2	 1 PVID Egress Untagged
+	 50
+	 60
 
 vnet0	 1 PVID Egress Untagged
 
-vnet1	 1 PVID Egress Untagged
-	 77
-
-vnet2	 1 PVID Egress Untagged
-
 vnet3	 1 PVID Egress Untagged
-	 77
+	 50
+	 60
 ```
 
-4. Above test on addtional network will work.
+:::note
+
+Device like `vnet1` is created when KVM VM is up dynamically, it can't survive after VM is powered off or host PC is down, reset them when the KVM VM is up.
+
+:::
+
+### Set up the Test Machine (VM)
+
+```
+rancher@wang:~$ ip link
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+2: enp1s0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
+    link/ether 52:54:00:ed:f1:a7 brd ff:ff:ff:ff:ff:ff
+3: enp6s0: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+    link/ether 52:54:00:c4:1d:a8 brd ff:ff:ff:ff:ff:ff
+
+
+nic enp6s0 is on second network
+
+sudo -i ip link add link enp6s0 enp6s0.50 type vlan id 50  // add vlan sub-interface
+
+sudo -i ip addr add dev enp6s0.50 192.168.50.88/24
+
+sudo -i ip link set enp6s0 up
+
+sudo -i ip link set enp6s0.50 up
+```
+
+### Install and set the Harvester on another VM
+
+After cluster is up, as the KVM VM has two NICs, you can set up a Harvester cluster-network `cn2` to use the second NIC, and create a trunk NAD e.g. to pass vid 50-100.
+
+```
+harv21:~ # bridge vlan show
+port              vlan-id  
+mgmt-br           1 PVID Egress Untagged
+mgmt-bo           1 PVID Egress Untagged
+cn2-bo            1 PVID Egress Untagged
+                  50
+                  51
+                  52
+                  53
+                  54
+                  55
+                  56
+                  57
+                  58
+                  59
+                  60
+                  61
+                  62
+                  63
+                  64
+                  65
+                  66
+                  67
+                  68
+                  69
+                  70
+                  71
+                  72
+                  73
+                  74
+                  75
+                  76
+                  77
+                  78
+                  79
+                  80
+                  81
+                  82
+                  83
+                  84
+                  85
+                  86
+                  87
+                  88
+                  89
+                  90
+                  91
+                  92
+                  93
+                  94
+                  95
+                  96
+                  97
+                  98
+                  99
+                  100
+```
+
+### Spin up a VM inside Harvester
+
+Let this VM attache to cluster network cn2.
+
+```
+rancher@vm-trunk:~$ ip link
+
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+2: enp1s0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
+    link/ether 26:7f:64:34:c1:a9 brd ff:ff:ff:ff:ff:ff
+3: enp2s0: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+    link/ether ca:91:01:1d:12:5f brd ff:ff:ff:ff:ff:ff
+
+
+rancher@vm-trunk:~$ sudo -i ip link add link enp2s0 enp2s0.50 type vlan id 50  // set sub-interface of vid 50
+
+rancher@vm-trunk:~$ sudo -i ip addr add dev enp2s0.50 192.168.50.99/24  // ensure the IP is in same range with above test vm
+
+rancher@vm-trunk:~$ sudo -i ip link set enp2s0 up
+rancher@vm-trunk:~$ sudo -i ip link set enp2s0.50 up
+
+
+after the setup 
+
+rancher@vm-trunk:~$ ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: enp1s0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000 // attached to the vlan-untag(mgmt) network, for initial accessing to the VM
+    link/ether 26:7f:64:34:c1:a9 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.122.65/24 brd 192.168.122.255 scope global dynamic enp1s0
+       valid_lft 2897sec preferred_lft 2897sec
+    inet6 fe80::247f:64ff:fe34:c1a9/64 scope link 
+       valid_lft forever preferred_lft forever
+3: enp2s0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000    // attached to CN2, can further create many sub-interfaces
+    link/ether ca:91:01:1d:12:5f brd ff:ff:ff:ff:ff:ff
+    inet6 fe80::c891:1ff:fe1d:125f/64 scope link 
+       valid_lft forever preferred_lft forever
+4: enp2s0.50@enp2s0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000 // sub-interface with customized VID and IP address
+    link/ether ca:91:01:1d:12:5f brd ff:ff:ff:ff:ff:ff
+    inet 192.168.50.99/24 scope global enp2s0.50
+       valid_lft forever preferred_lft forever
+    inet6 fe80::c891:1ff:fe1d:125f/64 scope link 
+       valid_lft forever preferred_lft forever
+
+```
+
+Test the ping the IP of test vm, it works perfectly.
+
+```
+rancher@vm-trunk:~$  (VM setup on Harvester)
+rancher@vm-trunk:~$ ping 192.168.50.88 -I enp2s0.50   (ping test machien IP)
+PING 192.168.50.88 (192.168.50.88) from 192.168.50.99 enp2s0.50: 56(84) bytes of data.
+64 bytes from 192.168.50.88: icmp_seq=1 ttl=64 time=0.701 ms
+```
+
+
+Run http server on test-vm
+```
+rancher@wang:~/test_yq$ python3 -m http.server --bind 192.168.50.88
+Serving HTTP on 192.168.50.88 port 8000 (http://192.168.50.88:8000/) ...
+192.168.50.99 - - [29/Oct/2025 11:18:39] "GET / HTTP/1.1" 200 -
+```
+
+Accesss the http server from Harvester VM
+
+```
+rancher@vm-trunk:~$ curl http://192.168.50.88:8000
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>Directory listing for /</title>
+</head>
+<body>
+<h1>Directory listing for /</h1>
+<hr>
+<ul>
+<li><a href="rancher-logging.yaml">rancher-logging.yaml</a></li>
+<li><a href="rancher-monitoring.yaml">rancher-monitoring.yaml</a></li>
+</ul>
+<hr>
+</body>
+</html>
+```
+
+:::note
+
+1. Above test runs on a localized subnetwork e.g. `192.168.50.0/24` (map to vid 50), there is no gateway, traffics go through the test VM and Harvester VM. Ping external might not work as no gateway.
+
+2. If the network is even complex, config `ip route` on the test vm and Harvester VM, setup the gateway correctly.
+
+:::
+
+
+## References
+
+https://github.com/w13915984028/harvester-develop-summary/blob/main/dive-into-harvester-vlan-network-in-nested-virtualization.md
+
+https://github.com/w13915984028/harvester-develop-summary/blob/main/config-additional-vlan-interface-on-vm-network-on-harvester.md
+
