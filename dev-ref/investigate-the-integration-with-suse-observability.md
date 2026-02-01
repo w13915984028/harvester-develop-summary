@@ -240,7 +240,38 @@ As of 2026.01.16, the agent has latest version 1.2.14
     version: 1.2.14
 ```
 
-### Install SO-agent pack on Harvester
+### Install SO-agent pack on Harvester via experimental addon
+
+Recommend to follow this way.
+
+Refer PR https://github.com/harvester/experimental-addons/pull/46
+
+#### Create the experimental addons on a running Harvester cluster
+
+```sh
+kubectl apply -f https://raw.githubusercontent.com/harvester/experimental-addons/main/suse-observability-agent/suse-observability-agent.yaml
+```
+
+#### Fill in above data to following fields
+
+From Harvester UI, click `Addons`, locate `suse-observability-agent` and then click `Edit YAML`; or run `kubectl edit addons.harvesterhci -n suse-observability suse-observability-agent`, then:
+
+Fill below fields
+
+```
+  valuesContent: |
+    stackstate:
+      apiKey: svctok-OxZrVBdB5g7UUESBNW1ozx5u7NrqaaBx // the generated token
+      cluster:
+        name: harvester1 // the instance name
+      url: http://192.168.122.233:8090/receiver/stsAgent // the auto generated URL from SUSE Observability
+```
+
+### Enable the addon
+
+### Install SO-agent pack on Harvester manually
+
+When addon solution does not work, try this solution.
 
 Copy the helm related command on SO UI.
 
