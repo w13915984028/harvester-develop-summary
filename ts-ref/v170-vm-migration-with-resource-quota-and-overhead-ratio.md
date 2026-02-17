@@ -313,6 +313,10 @@ When the `ResourceQuota` is not over used, VM migration is always successfuly.
 
 ## Solutions
 
+### Harvester v180 PR
+
+On Harvester v180, PR https://github.com/harvester/harvester/pull/9942 is added, which compensate the quota gap when an already running VM is doing migration, it allows the VM to take more de-facto resources. But if this VM is stopped, it won't get the privil3ge any more.
+
 ### Keep the current Implementation
 
 The current implementation allows a first-time migration, but denies the second-time migration. The `resourcequota` finally needs to be updated to match the `overhead-ratio`.
