@@ -21,6 +21,12 @@ helm repo add suse-observability https://charts.rancher.com/server-charts/prime/
 helm repo update
 ```
 
+:::note
+
+Run abvove commands on Harvester cluster, or a local machine with kubeconfig to the target Harvester cluster.
+
+:::
+
 ### Prepare the SO installation template
 
 In production, the SO needs strong resources. For test/PoC, a small footprint also works. This is done via param `sizing.profile='trial'`.
@@ -40,7 +46,7 @@ generate template:
 export VALUES_DIR=.
 helm template \
   --set license='V2...' \
-  --set baseUrl='http:///192.168.122.233:8090' \
+  --set baseUrl='http://192.168.122.233:8090' \
   --set sizing.profile='trial' \
   suse-observability-values \
   suse-observability/suse-observability-values --output-dir $VALUES_DIR  
@@ -50,7 +56,7 @@ helm template \
 
 1. The `profile='trial'` guides the template to use as few resources as possible.
 
-2. Manually edit the generated files under path `./suse-observability-values`, to reduce the `request` resources like `cpu, memory`, and also adjust the PVC size. The `trial` still requests a big amount of resources, if your Harvester cluster is installed with the entry level resources.
+2. Manually edit the generated files under path `./suse-observability-values`, to reduce the `request` resources like `cpu, memory`, and also adjust the PVC size. The `trial` still requests a big amount of resources, if your Harvester cluster is installed with the entry level resources. Refer [a tailored example](#others)
 
 3. If your `baseUrl` is changed, either re-generate the template, or edit the generated files directly. 
 
@@ -58,15 +64,15 @@ helm template \
 
 5. The `admin` password is also saved on the generated file.
 
-6. For the Licese, please contact the author.
+6. A License key is needed to get SO installed, contact me or search on internal slack channel.
 
 :::
 
 ### Install SO
 
-```sh
+Install SO.
 
-install:
+```sh
 
 export VALUES_DIR=.
 
@@ -80,6 +86,7 @@ helm upgrade \
 
 ```
 
+Check the installataion result.
 
 ```sh
 list instllation
@@ -137,7 +144,7 @@ Events:
   Warning  FailedCreate      5m55s (x19 over 27m)  statefulset-controller  create Pod suse-observability-elasticsearch-master-0 in StatefulSet suse-observability-elasticsearch-master failed error: pods "suse-observability-elasticsearch-master-0" is forbidden: violates PodSecurity "baseline:latest": privileged (container "configure-sysctl" must not set securityContext.privileged=true)
 ```
 
-
+Adjust the privilege.
 
 ```sh
 // set priviledged,  to ensure the elastic can be installed
@@ -151,7 +158,7 @@ Quickly, all PoDs are ready.
 
 #### Create a new LB type service
 
-This service, maps the SO accessing to a format like `http:///192.168.122.233:8090`.
+This service, maps the SO accessing to a http link like `http://192.168.122.233:8090`.
 
 The backend SO router is served on port `8080`, and the service port can be any value you like.
 
@@ -183,7 +190,7 @@ EOF
 kubectl create -f observ-expose.yaml
 ```
 
-Access the SO UI via above like `http:///192.168.122.233:8090`.
+Access the SO UI via above like `http://192.168.122.233:8090`.
 
 ### Uninstall SO
 
