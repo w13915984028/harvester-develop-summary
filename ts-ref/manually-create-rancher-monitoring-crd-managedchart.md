@@ -96,3 +96,31 @@ EOF
 
 kubectl create -f rmc-v14.yaml
 ```
+
+### Re-create on Harvester v1.7.* cluster
+
+```
+cat > rmc-v171.yaml << 'EOF'
+apiVersion: management.cattle.io/v3
+kind: ManagedChart
+metadata:
+  name: rancher-monitoring-crd
+  namespace: fleet-local
+spec:
+  chart: rancher-monitoring-crd
+  releaseName: rancher-monitoring-crd
+  version: 107.1.0+up69.8.2-rancher.15
+  defaultNamespace: cattle-monitoring-system
+  repoName: harvester-charts
+  timeoutSeconds: 600
+  targets:
+  - clusterName: local
+    clusterSelector:
+      matchExpressions:
+      - key: provisioning.cattle.io/unmanaged-system-agent
+        operator: DoesNotExist
+
+EOF
+
+kubectl create -f rmc-v171.yaml
+```
