@@ -1,12 +1,23 @@
-
 ## How to update a subchart on Harvester
 
-On issue like https://github.com/harvester/harvester/issues/9452, we need to bump the harvester-load-balancer rbac, it is worked via the `harvester/charts` repo.
+As of 2026, the Harvester master-head ISO building is not fetching charts from https://github.com/harvester/charts `master-branch` directly. If your feature includes both chart and controller changes, special care is needed.
 
+General process:
+
+1. Ensure the new chart is updated and released first.
+
+2. Ensure the https://github.com/harvester/harvester/blob/master/deploy/charts/harvester/Chart.yaml and https://github.com/harvester/harvester/tree/master/deploy/charts/harvester/charts are updated.
+
+3. Merge the controller changes.
+
+
+Example:
+
+On issue like https://github.com/harvester/harvester/issues/9452, we need to bump the harvester-load-balancer rbac.
 
 ### Local update and test
 
-To be updated
+To be updated.
 
 ### How to release the chart
 
@@ -36,6 +47,8 @@ Need to manually cherry-pick the master branch PR to release branch, and also re
 
 Example: https://github.com/harvester/charts/pull/477
 Example: https://github.com/harvester/charts/pull/478
+
+(note: due to a mistake, the above two normally should be merged together, with content changes and a new chart version)
 
 On the happy path, a new chart tgz file like [harvester-cloud-provider 1.8.0-dev.1](https://github.com/harvester/charts/releases/tag/harvester-load-balancer-1.8.0-dev.1) is released.
 
