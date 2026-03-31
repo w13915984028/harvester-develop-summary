@@ -453,7 +453,7 @@ Mar 31 12:49:15 gc6-pool1-vsb9p-k9lqm rke2[2282]: time="2026-03-31T12:49:15Z" le
 
 Why this object has `generation: 2`?
 
-![](./resources/guest-cluster-provision-stucking.png)
+![](./resources/the-differences-on-helmchart-object.png)
 
 First: `HelmChartConfig` object is created after `HelmChart`.
 
@@ -497,11 +497,11 @@ kind: HelmChartConfig
   resourceVersion: "398"
   uid: 51c1bc78-b5b6-48b0-850e-e4b37e456378
 spec:
-  failurePolicy: reinstall
+  failurePolicy: reinstall                                          // note
   valuesContent: '{"cloudConfigPath":"/var/lib/rancher/rke2/etc/config-files/cloud-provider-config","global":{"cattle":{"clusterId":"c-m-4t2fhkpd","clusterName":"gc6"}}}'
 ```
 
-Third: the applied `objectset.rio.cattle.io/applied:` shows the inital values does not have `failurePolicy: reinstall`
+Third: the annotation `objectset.rio.cattle.io/applied:` shows the inital values does not have `failurePolicy: reinstall`
 
 ```
 echo "H4sIAAA...CysQ7OhT6Bm3eoC8RsO02/0KAAD//4kAGonkAwAA" | base64 -d | gunzip
@@ -510,15 +510,13 @@ echo "H4sIAAA...CysQ7OhT6Bm3eoC8RsO02/0KAAD//4kAGonkAwAA" | base64 -d | gunzip
 {"apiVersion":"helm.cattle.io/v1","kind":"HelmChart","metadata":{"annotations":{"helm.cattle.io/chart-url":"https://rke2-charts.rancher.io/assets/harvester-cloud-provider/h","objectset.rio.cattle.io/id":"","objectset.rio.cattle.io/owner-gvk":"k3s.cattle.io/v1, Kind=Addon","objectset.rio.cattle.io/owner-name":"harvester-cloud-provider","objectset.rio.cattle.io/owner-namespace":"kube-system","rke2.cattle.io/inject-cluster-config":"true"},"labels":{"objectset.rio.cattle.io/hash":"989c0d49f98ef3f71bcb224843d8a6a6be3ce2e5"},"name":"harvester-cloud-provider","namespace":"kube-system"},"spec":{"bootstrap":true,"chartContent":"H4sICE1rqmkCA3RtcC5zVlJlQmVSSjhFLnRhcgDsWHWf87gR3r/9KeaXLbfGxNl9","set":{"global.clusterCIDR":"10.42.0.0/16","global.clusterCIDRv4":"10.42.0.0/16","global.clusterDNS":"10.43.0.10","global.clusterDomain":"cluster.local","global.rke2DataDir":"/var/lib/rancher/rke2","global.serviceCIDR":"10.43.0.0/16","global.systemDefaultIngressClass":"traefik"},"takeOwnership":false}}
 ```
 
-
 #### Root cause
 
 Root Cause Analysis:
 
-- **Race Condition in Resource Initialization**: Creating the HelmChart prior to the HelmChartConfig triggers an immediate spec update upon the config’s arrival, resulting in an unintended increment of the generation field.
+- **Race Condition in Resource Initialization**: Creating the `HelmChart` prior to the `HelmChartConfig` triggers an immediate spec update upon the config’s arrival, resulting in an unintended increment of the generation field.
 
 - **Immutable Job Specification**: Due to the defined failurePolicy, the controller identifies the configuration change as a conflict. To reconcile the state, it is forced to delete and recreate the job rather than performing an in-place update.
-
 
 code:
 
