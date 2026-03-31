@@ -346,8 +346,6 @@ spec:
   valuesContent: '{"global":{"cattle":{"clusterId":"c-m-4t2fhkpd"}}}'
 ```
 
-
-
 Run-time objects:
 
 HelmChartConfig:
@@ -375,6 +373,28 @@ spec:
   failurePolicy: reinstall
   valuesContent: '{"cloudConfigPath":"/var/lib/rancher/rke2/etc/config-files/cloud-provider-config","global":{"cattle":{"clusterId":"c-m-4t2fhkpd","clusterName":"gc6"}}}'
 ```
+
+
+```
+root@gc6-pool1-vsb9p-k9lqm:~# kk get helmchartconfig -A
+NAMESPACE     NAME                       AGE
+kube-system   harvester-cloud-provider   6h39m
+kube-system   rke2-calico                6h39m
+kube-system   rke2-ingress-nginx         6h39m
+kube-system   rke2-traefik               6h39m
+
+root@gc6-pool1-vsb9p-k9lqm:~# kk get helmchartconfig -A -oyaml | grep failure -i
+    failurePolicy: reinstall
+    failurePolicy: reinstall
+    failurePolicy: reinstall
+    failurePolicy: reinstall
+```
+:::note
+
+`HelmChartConfig` is generated from `managed-chart-config`, but the `failurePolicy` is appended later.
+
+:::
+
 
 HelmChart:
 
@@ -427,9 +447,6 @@ root@gc6-pool1-vsb9p-k9lqm:~#
 ```
 
 Why this object has `generation: 2`?
-
-
-
 
 #### rke2-server logs
 
@@ -512,60 +529,55 @@ echo "H4sIAAA...CysQ7OhT6Bm3eoC8RsO02/0KAAD//4kAGonkAwAA" | base64 -d | gunzip
 
 #### Root cause
 
-Root Cause Analysis:
 
-- **Race Condition in Resource Initialization**: Creating the `HelmChart` prior to the `HelmChartConfig` triggers an immediate spec update upon the config’s arrival, resulting in an unintended increment of the generation field.
+##### Executive Summary
+A race condition exists between the creation of `HelmChart` and `HelmChartConfig` resources. When a `HelmChart` is initialized without its corresponding `HelmChartConfig`, the subsequent arrival of the config triggers an immediate spec update. This causes the `helm-controller` to delete and recreate the installation Job so rapidly that the `kube-controller-manager` encounters a UID mismatch, resulting in an orphaned or "dead" Job.
 
-- **Immutable Job Specification**: Due to the defined failurePolicy, the controller identifies the configuration change as a conflict. To reconcile the state, it is forced to delete and recreate the job rather than performing an in-place update.
+##### Detailed Analysis
 
-code:
+###### 1. Race Condition in Resource Initialization
+The `HelmChart` is often created prior to the `HelmChartConfig` (likely due to the generation order from `managed-chart-config`).
+* **The Trigger**: The arrival of the `HelmChartConfig` updates the `HelmChart` spec.
+* **The Result**: This triggers an unintended increment of the `.metadata.generation` field almost immediately after the first controller loop begins.
 
-https://github.com/k3s-io/helm-controller/blob/ba204460e7b73a275ec10f57f79a823ad0aa28a4/pkg/controllers/chart/chart.go#L510-L517
+###### 2. Immutable Job Specification & Controller Logic
+Per the [helm-controller source](https://github.com/k3s-io/helm-controller/blob/ba204460e7b73a275ec10f57f79a823ad0aa28a4/pkg/controllers/chart/chart.go#L510-L517), the controller identifies configuration changes as a conflict.
+* Because the `failurePolicy` is set to `reinstall` (the default), the controller is forced to **delete and recreate** the Job to reconcile the state, it is not possible to perform an in-place patch upon job spec.
 
-
-When `helmchart` object changed very quickly, the helm-controller deletes and creates the job fastly, this has chance to mess `kube-controller-manager`, as a same named jobe has changed IDs.
+###### 3. The "Dead Job" Phenomenon (Kube-Controller-Manager Conflict)
+The rapid "Delete -> Create" cycle creates a collision in the `kube-controller-manager`.
+* **The Error**: The manager attempts to sync a Job based on an old UID, but find a new Job with the same name but a different UID in etcd.
+* **Log Evidence (Standard):**
+  > `level=error msg="error syncing... Replace Wait batch/v1, Kind=Job... requeuing"`
+* **Log Evidence (The "Smoking Gun"):**
+  > `E0331 12:49:15... job_controller.go:659] "Unhandled Error" err="syncing job... Precondition failed: UID in precondition: [OLD-UID], UID in object meta: [NEW-UID]"`
 
 We see below log on almost each guest cluster.
 
 >Mar 31 12:54:52 gc7-pool1-fcm5x-p6lbp rke2[2281]: time="2026-03-31T12:54:52Z" level=error msg="error syncing 'kube-system/harvester-cloud-provider': handler helm-controller-chart-registration: DesiredSet - Replace Wait batch/v1, Kind=Job kube-system/helm-install-harvester-cloud-provider for helm-controller-chart-registration kube-system/harvester-cloud-provider, requeuing"
 
 
-And log on some guest clusters.
+And log on some guest clusters (when bug happens).
 >E0331 12:49:15.777348       1 job_controller.go:659] "Unhandled Error" err="syncing job: tracking status: adding uncounted pods to status: Operation cannot be fulfilled on jobs.batch \"helm-install-harvester-cloud-provider\": StorageError: invalid object, Code: 4, Key: /registry/jobs/kube-system/helm-install-harvester-cloud-provider, ResourceVersion: 0, AdditionalErrorMsg: Precondition failed: UID in precondition: ca2a4a3e-7335-4c66-a337-00bf70e8356e, UID in object meta: f18caaf9-a7ab-4409-b07d-7807530e74f9" logger="UnhandledError"
 
 
-How to fix?
+##### Proposed Remediation Strategies
 
-1. Create `HelmChartConfig` before `HelmChart`, some delays might be needed.
+###### Strategy 1: Deterministic Creation Order
+Modify the `managed-chart-config` logic to ensure **Atomic Creation**.
+* **Action**: The `HelmChartConfig` must be successfully applied and present in the API server before the `HelmChart` is created. This ensures the controller sees the full configuration in its first reconciliation loop, preventing the `generation` increment.
 
-2. Should `failurePolicy: reinstall` be appended to `HelmChartConfig` object explicitly and automatically? the controller has a default value `DefaultFailurePolicy`.
+###### Strategy 2: Controller "Debouncing" (Code Change)
+Introduce a "Settling Time" or "Debounce" period in the `helm-controller`.
+* **Action**: When a `HelmChart` change is detected, wait a short duration (e.g., 2-5 seconds) before triggering Job creation. This allows the `HelmChartConfig` to arrive and be processed in a single batch.
 
-```
-FailurePolicyReinstall = "reinstall"
-DefaultFailurePolicy = FailurePolicyReinstall
-```
-
-https://github.com/k3s-io/helm-controller/blob/ba204460e7b73a275ec10f57f79a823ad0aa28a4/pkg/controllers/chart/chart.go#L65
-
-
-:::note
-
-`HelmChartConfig` is generated from `managed-chart-config`, but the 
-
-:::
+###### Strategy 3: Dynamic Job Naming
+Avoid static naming for the installation Jobs.
+* **Action**: Append a hash of the `generation` or spec to the Job name (e.g., `helm-install-provider-v2`). This prevents UID conflicts because the `kube-controller-manager` treats the updated configuration as an entirely new resource rather than a replacement of a still-active resource.
 
 
-```
-root@gc6-pool1-vsb9p-k9lqm:~# kk get helmchartconfig -A
-NAMESPACE     NAME                       AGE
-kube-system   harvester-cloud-provider   6h39m
-kube-system   rke2-calico                6h39m
-kube-system   rke2-ingress-nginx         6h39m
-kube-system   rke2-traefik               6h39m
+##### References
+* **Controller Logic**: [chart.go L510-L517](https://github.com/k3s-io/helm-controller/blob/ba204460e7b73a275ec10f57f79a823ad0aa28a4/pkg/controllers/chart/chart.go#L510-L517)
+* **Default Policies**: `DefaultFailurePolicy = FailurePolicyReinstall` [chart.go L65](https://github.com/k3s-io/helm-controller/blob/ba204460e7b73a275ec10f57f79a823ad0aa28a4/pkg/controllers/chart/chart.go#L65)
 
-root@gc6-pool1-vsb9p-k9lqm:~# kk get helmchartconfig -A -oyaml | grep failure -i
-    failurePolicy: reinstall
-    failurePolicy: reinstall
-    failurePolicy: reinstall
-    failurePolicy: reinstall
-```
+
