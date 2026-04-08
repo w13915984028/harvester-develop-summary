@@ -530,6 +530,79 @@ echo "H4sIAAA...CysQ7OhT6Bm3eoC8RsO02/0KAAD//4kAGonkAwAA" | base64 -d | gunzip
 #### Root cause
 
 
+##### RKE2 debug log shows the running sequences
+
+On Rancher Manager, edit yaml when creating a guest cluster, set the debug flag of rke2.
+
+```
+spec:
+  rkeConfig
+    machineSelectorConfig:
+      - config:
+          cloud-provider-config: secret://fleet-default:harvesterconfigsp9sx
+          cloud-provider-name: harvester
+          protect-kernel-defaults: false
+          debug: true # <--- here
+```
+
+The log clearly shows the later created `helmchartconfig` caused the `helmchart  job` to be deleted&re-created.
+
+```
+Apr 08 19:40:20 Created batch/v1, Kind=Job kube-system/helm-install-harvester-cloud-provider
+Apr 08 19:40:20 Delete batch/v1, Kind=Job kube-system/helm-install-harvester-cloud-provider
+Apr 08 19:40:20 Created batch/v1, Kind=Job kube-system/helm-install-harvester-cloud-provider
+```
+
+
+```
+Apr 08 19:38:52 gc1-pool1-58mfq-x8bx8 rke2[2231]: time="2026-04-08T19:38:52Z" level=info msg="certificate CN=rke2-cloud-controller-manager signed by CN=rke2-client-ca@1775677132: notBefore=2026-04-08 19:38:52 +0000 UTC notAfter=2027-04-08 19:38:52 +0000 UTC"
+
+Apr 08 19:39:02 gc1-pool1-58mfq-x8bx8 rke2[2231]: time="2026-04-08T19:39:02Z" level=info msg="Extracting file charts/harvester-cloud-provider.yaml to /var/lib/rancher/rke2/data/v1.35.2-rke2r1-6a3c0ebad32c/charts/harvester-cloud-provider.yaml"
+
+Apr 08 19:39:02 gc1-pool1-58mfq-x8bx8 rke2[2231]: time="2026-04-08T19:39:02Z" level=info msg="Updated manifest /var/lib/rancher/rke2/server/manifests/harvester-cloud-provider.yaml to set cluster configuration values"
+
+Apr 08 19:40:20 gc1-pool1-58mfq-x8bx8 rke2[2231]: time="2026-04-08T19:40:20Z" level=debug msg="DesiredSet - Created helm.cattle.io/v1, Kind=HelmChart kube-system/harvester-cloud-provider for  kube-system/harvester-cloud-provider"
+Apr...
+
+
+Apr 08 19:40:20 gc1-pool1-58mfq-x8bx8 rke2[2231]: time="2026-04-08T19:40:20Z" level=debug msg="DesiredSet - Created batch/v1, Kind=Job kube-system/helm-install-harvester-cloud-provider for helm-controller-chart-registration kube-system/harvester-cloud-provider"
+
+
+...
+Apr 08 19:40:20 gc1-pool1-58mfq-x8bx8 rke2[2231]: time="2026-04-08T19:40:20Z" level=debug msg="DesiredSet - No change(2) batch/v1, Kind=Job kube-system/helm-install-harvester-cloud-provider for helm-controller-chart-registration kube-system/harvester-cloud-provider"
+...
+Apr 08 19:40:20 gc1-pool1-58mfq-x8bx8 rke2[2231]: time="2026-04-08T19:40:20Z" level=debug msg="DesiredSet - Created helm.cattle.io/v1, Kind=HelmChartConfig kube-system/harvester-cloud-provider for  kube-system/managed-chart-config"
+
+Apr 08 19:40:20 gc1-pool1-58mfq-x8bx8 rke2[2231]: time="2026-04-08T19:40:20Z" level=debug msg="DesiredSet - Patch /v1, Kind=Secret kube-system/chart-values-harvester-cloud-provider for helm-controller-chart-registration kube-system/harvester-cloud-provider -- [PATCH:{\"data\":{\"HelmChartConfigValues...f:objectset.rio.cattle.io/owner-namespace\":{}},\"f:labels\":{\".\":{},\"f:objectset.rio.cattle.io/hash\":{}},\"f:ownerReferences\":{\".\":{},\"k:{\\\"uid\\\":\\\"5a4a762a-b6dc-4fdb-a977-9555c6ac2d1b\\\"}\":{}}},\"f:type\":{}}}]},\"type\":\"helmcharts.helm.cattle.io/values\"}]"
+
+
+Apr 08 19:40:20 gc1-pool1-58mfq-x8bx8 rke2[2231]: time="2026-04-08T19:40:20Z" level=debug msg="DesiredSet - Patch batch/v1, Kind=Job kube-system/helm-install-..."status\":{}}]"
+
+Apr 08 19:40:20 gc1-pool1-58mfq-x8bx8 rke2[2231]: time="2026-04-08T19:40:20Z" level=debug msg="DesiredSet - Delete batch/v1, Kind=Job kube-system/helm-install-harvester-cloud-provider for helm-controller-chart-registration kube-system/harvester-cloud-provider"
+
+Apr 08 19:40:20 gc1-pool1-58mfq-x8bx8 rke2[2231]: time="2026-04-08T19:40:20Z" level=error msg="error syncing 'kube-system/harvester-cloud-provider': handler helm-controller-chart-registration: DesiredSet - Replace Wait batch/v1, Kind=Job kube-system/helm-install-harvester-cloud-provider for helm-controller-chart-registration kube-system/harvester-cloud-provider, requeuing"
+
+
+Apr 08 19:40:20 gc1-pool1-58mfq-x8bx8 rke2[2231]: time="2026-04-08T19:40:20Z" level=debug msg="DesiredSet - Created batch/v1, Kind=Job kube-system/helm-install-harvester-cloud-provider for helm-controller-chart-registration kube-system/harvester-cloud-provider"
+..
+Apr 08 19:40:20 gc1-pool1-58mfq-x8bx8 rke2[2231]: time="2026-04-08T19:40:20Z" level=debug msg="DesiredSet - No change(2) batch/v1, Kind=Job kube-system/helm-install-harvester-cloud-provider for helm-controller-chart-registration kube-system/harvester-cloud-provider"...
+
+Apr 08 19:40:21 gc1-pool1-58mfq-x8bx8 rke2[2231]: time="2026-04-08T19:40:21Z" level=debug msg="DesiredSet - No change(2) batch/v1, Kind=Job kube-system/helm-install-harvester-cloud-provider for helm-controller-chart-registration kube-system/harvester-cloud-provider"
+
+
+...
+Apr 08 19:40:23 gc1-pool1-58mfq-x8bx8 rke2[2231]: time="2026-04-08T19:40:23Z" level=debug msg="DesiredSet - No change(2) batch/v1, Kind=Job kube-system/helm-install-harvester-cloud-provider for helm-controller-chart-registration kube-system/harvester-cloud-provider"
+...
+..
+Apr 08 19:40:39 gc1-pool1-58mfq-x8bx8 rke2[2231]: time="2026-04-08T19:40:39Z" level=debug msg="DesiredSet - No change(2) batch/v1, Kind=Job kube-system/helm-install-harvester-cloud-provider for helm-controller-chart-registration kube-system/harvester-cloud-provider"
+...
+Apr 08 19:40:40 gc1-pool1-58mfq-x8bx8 rke2[2231]: time="2026-04-08T19:40:40Z" level=debug msg="DesiredSet - No change(2) batch/v1, Kind=Job kube-system/helm-install-harvester-cloud-provider for helm-controller-chart-registration kube-system/harvester-cloud-provider"
+...
+Apr 08 19:40:40 gc1-pool1-58mfq-x8bx8 rke2[2231]: time="2026-04-08T19:40:40Z" level=debug msg="DesiredSet - No change(2) batch/v1, Kind=Job kube-system/helm-install-harvester-cloud-provider for helm-controller-chart-registration kube-system/harvester-cloud-provider"
+```
+
+
+
 ##### Executive Summary
 A race condition exists between the creation of `HelmChart` and `HelmChartConfig` resources. When a `HelmChart` is initialized without its corresponding `HelmChartConfig`, the subsequent arrival of the config triggers an immediate spec update. This causes the `helm-controller` to delete and recreate the installation Job so rapidly that the `kube-controller-manager` encounters a UID mismatch, resulting in an orphaned or "dead" Job.
 
