@@ -162,4 +162,3 @@ EPIC: https://github.com/harvester/harvester/issues/10068
 * **Example Input**
 
     `true` (Enable this option only if you need to see the full list of available flags and descriptions during a debugging session).
-
