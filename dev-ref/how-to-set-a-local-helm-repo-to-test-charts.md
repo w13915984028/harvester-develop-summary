@@ -330,3 +330,73 @@ In guest cluster, run `kubectl edit deployment -n kube-system harvester-cloud-pr
 ```
 
 System will download the new container image from ttl.sh and run it.
+
+
+## 202605 Test HCP chart with controller
+
+### Prepare the chart and serve it
+
+A pre-packaged chart is available via path:
+
+https://github.com/w13915984028/harvester-charts/blob/bbf7cc7ab56e45887fd68718a423a44d5b806434/charts/harvester-cloud-provider-109.0.1%2Bup0.2.12.tgz
+
+
+or get the code via path: https://github.com/w13915984028/harvester-charts/blob/bbf7cc7ab56e45887fd68718a423a44d5b806434/charts/harvester-cloud-provider/Chart.yaml#L28
+
+and package the chart manually
+/go/src/github.com/w13915984028/harvester-charts/charts$ helm package harvester-cloud-provider/
+
+a file `harvester-cloud-provider-109.0.1+up0.2.12.tgz` is generated.
+
+The branch & pre-packed chart is via PR https://github.com/harvester/charts/pull/511 and https://github.com/harvester/charts/pull/524
+
+
+```sh
+
+1. prepare a path like `tmptmp/charts`
+
+2. download/copy the chart tgz file to above path
+
+3. make helm repor index
+tmptmp$ helm repo index charts/
+
+4. check the result:
+tmptmp$ ls charts/
+
+harvester-cloud-provider-109.0.1+up0.2.12.tgz  index.yaml
+
+5. run a simple http server
+tmptmp/charts$ python3 -m http.server
+
+```
+
+### Update guest cluster
+
+1. Add a local repo
+
+![](../resources/gc-add-local-repo.png)
+
+
+2. Refresh to get the chart
+
+![](../resources/gc-refresh-to-get-local-charts.png)
+
+
+3. Upgrade or update the chart to set params via chart
+
+![](../resources/gc-update-chart-to-set-params.png)
+
+
+### Prepare container image
+
+When testing new flags introduced on PR https://github.com/harvester/charts/pull/511 like `--node-ip-cidr=192.168.122.0/24`, need to build HCP image per PR https://github.com/harvester/cloud-provider-harvester/pull/74, and change the chart values of HCP like below:
+
+
+```yaml
+image:
+  pullPolicy: IfNotPresent
+  repository: ttl.sh/hcp
+  tag: 2h
+```
+
+note: those steps are used to test a new chart & container image before they are released.
