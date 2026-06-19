@@ -10,7 +10,7 @@ Follow steps show how to.
 
 1. Download a chart to local.
 
-e.g. https://github.com/harvester/charts/releases/download/harvester-cloud-provider-0.2.12-rc2/harvester-cloud-provider-0.2.12-rc2.tgz
+    e.g. https://github.com/harvester/charts/releases/download/harvester-cloud-provider-0.2.12-rc2/harvester-cloud-provider-0.2.12-rc2.tgz
 
 2. Edit chart to have your changes.
 
@@ -50,18 +50,18 @@ Prepare a local chart repository and then add it to Rancher UI
 
 1. Go to **Rancher UI** -> **Cluster Management** -> **Repositories**
 
-```
-Active harvester	git	https://github.com/harvester/harvester-ui-extension	gh-pages	10 days	
-Active harvester-charts-git	git	https://github.com/harvester/charts.git	gh-pages	9 days	
-Active Partners	git	https://git.rancher.io/partner-charts	main	10 days	
-Active Rancher	git	https://git.rancher.io/charts	release-v2.14	10 days	
-Active RKE2	git	https://git.rancher.io/rke2-charts	main	10 days	
+    ```
+    Active harvester	git	https://github.com/harvester/harvester-ui-extension	gh-pages	10 days	
+    Active harvester-charts-git	git	https://github.com/harvester/charts.git	gh-pages	9 days	
+    Active Partners	git	https://git.rancher.io/partner-charts	main	10 days	
+    Active Rancher	git	https://git.rancher.io/charts	release-v2.14	10 days	
+    Active RKE2	git	https://git.rancher.io/rke2-charts	main	10 days	
 
-```
+    ```
 
 1. Add new one:
 
-name: `my-repo`, index URL `http://192.168.2.59:8092`
+    name: `my-repo`, index URL `http://192.168.2.59:8092`
 
 ## Customize KDM file and serve
 
@@ -103,7 +103,7 @@ Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/) ...
 
 ## Set KDM file
 
-1. Go to **Rancher UI** -> **Global Settings** -> **Settings** -> **rke-metadata-config**
+Go to **Rancher UI** -> **Global Settings** -> **Settings** -> **rke-metadata-config**
 
 The default value:
 
@@ -148,7 +148,7 @@ When create Harvester based guest cluster from Rancher UI, select the cusotimize
 
 On guest cluster creation page, go to **Cluster Configuration** and click **Additional Manifest**, then post following content, it guides RKE2 to use local chart to bootstrap the cluster. Without this step, even though Rancher UI shows configuration options of new HCP chart, RKE2 still uses the old chart to bootstrap guest cluster.
 
-```
+```yaml
 apiVersion: helm.cattle.io/v1
 kind: HelmChart
 metadata:
@@ -159,7 +159,6 @@ spec:
   chart: harvester-cloud-provider
   version: 0.2.1300
   bootstrap: true
-  valuesContent: '{"cloudConfigPath":"/var/lib/rancher/rke2/etc/config-files/cloud-provider-config","global":{"cattle":{"clusterName":"gc5"}}}'
 ```
 
 :::important
@@ -171,16 +170,15 @@ spec:
 
 The chart repo will show such log:
 
-```
+```sh
 Serving HTTP on 0.0.0.0 port 8092 (http://0.0.0.0:8092/) ...
 192.168.122.118 - - [19/Jun/2026 13:19:34] "GET /index.yaml HTTP/1.1" 200 -
 192.168.122.118 - - [19/Jun/2026 13:21:30] "GET /harvester-cloud-provider-0.2.1300.tgz HTTP/1.1" 200 -
 ```
 
-
 check guest cluster log:
 
-```
+```sh
 
 oot@gc5-pool1-kp748-jxf7q:~# kubectl logs -n kube-system helm-install-harvester-cloud-provider-pgkxn
 if [[ ${KUBERNETES_SERVICE_HOST} =~ .*:.* ]]; then
@@ -241,4 +239,58 @@ STATUS: deployed
 REVISION: 1
 TEST SUITE: None
 + exit
+```
+
+### Create both cloud-config secret and use local chart via  `Additional Manifest`
+
+When testing https://github.com/harvester/harvester/issues/10225#issuecomment-4753722530 before the chart is avialable on RKE2.
+
+Via below, we can test the secret based cloud-config directly.
+
+```yaml
+apiVersion: v1
+data:
+  cloud-config: YXBpVmVyc2lvbj...g5UQo=
+kind: Secret
+metadata:
+  name: hcp-cloud-config
+  namespace: kube-system
+type: Opaque
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: harvester-cloud-provider
+  namespace: kube-system
+spec:
+  repo: http://192.168.2.59:8092
+  chart: harvester-cloud-provider
+  version: 0.2.1300
+  bootstrap: true
+```
+
+Generate/fetch the cloud-config content via, and copy the `content` to above `secret.data.cloud-config`:
+
+```
+ curl -k -X GET -H "Authorization: Bearer token-qxrgr:5wd586vqpblsnk4z5hfvfq4xw5cb99c69b88hxzlpqmkgxbqhnzcsl" "https://192.168.122.141/v1/harvester/kubeconfig?namespace=gc-test&&serviceAccountName=gc5&&outputFormat=yaml"
+
+
+
+curl -k -X POST -H "Authorization: Bearer token-qxrgr:5wd586vqpblsnk4z5hfvfq4xw5cb99c69b88hxzlpqmkgxbqhnzcsl" "https://192.168.122.141/v1/harvester/kubeconfig" -H "Content-Type: application/json" -d '{"namespace": "gc-test", "serviceAccountName": "gc5", "outputFormat": "yaml"}'
+
+
+########## cloud-init user data ############
+write_files:
+- encoding: b64
+  content: YXBpVm...ZNQQo=
+  owner: root:root
+  path: /etc/kubernetes/cloud-config
+  permissions: '0644'
+- encoding: b64
+  content: YXBpVmV...0ZNQQo=
+  owner: root:root
+  path: /var/lib/rancher/rke2/etc/config-files/cloud-provider-config
+  permissions: '0644'
+
+
 ```
