@@ -36,15 +36,97 @@ https://github.com/rancher/rke2-charts/blob/main-source/packages/harvester-cloud
 
 e.g. https://github.com/rancher/rke2-charts/pull/454
 
+
+1. `git pull` to update the code
+
+1. update related file
+
+    normally all files need to be updated, ensure the dependency is fetched from target chart, the `Chart.yaml.patch` works upon the target chart.
+
+    ```
+	    modified:   packages/harvester-cloud-provider/generated-changes/dependencies/kube-vip/dependency.yaml
+	    modified:   packages/harvester-cloud-provider/generated-changes/patch/Chart.yaml.patch
+	    modified:   packages/harvester-cloud-provider/package.yaml
+    ```
+
+1. run commands
+
+    ```
+    make prepare # Instantiates the chart in the workingDir specified in the package.yaml
+    # Make your changes here to the workingDir directly here
+    make patch # Saves changes to generated-changes/
+    make clean # Cleans up your workingDir, leaving behind only the generated-changes/
+    ```
+
+A successful run on `make prepare` should show like below
+
+```sh
+make prepare
+./bin/charts-build-scripts prepare
+INFO[0000] Pulling https://github.com/harvester/charts/releases/download/harvester-cloud-provider-0.2.12/harvester-cloud-provider-0.2.12.tgz from upstream into charts 
+INFO[0000] Loading dependencies for chart               
+INFO[0000] Found chart options for kube-vip in generated-changes/dependencies/kube-vip/dependency.yaml 
+INFO[0000] Found chart options for kube-vip in generated-changes/dependencies/kube-vip/dependency.yaml 
+INFO[0000] Pulling https://github.com/harvester/charts/releases/download/harvester-cloud-provider-0.2.12/harvester-cloud-provider-0.2.12.tgz[path=dependency_charts/kube-vip] from upstream into charts 
+INFO[0000] Updating chart metadata with dependencies    
+WARN[0000] Detected 'apiVersion:v2' within Chart.yaml; these types of charts require additional testing 
+INFO[0000] Applying changes from generated-changes      
+INFO[0000] Applying: generated-changes/patch/Chart.yaml.patch 
+
+
+Chart.yaml is updated per expectation
+
+cat packages/harvester-cloud-provider/charts/Chart.yaml 
+annotations:
+  catalog.cattle.io/certified: rancher
+  catalog.cattle.io/display-name: Harvester Cloud Provider
+  catalog.cattle.io/kube-version: '>= 1.23.0-0'
+  catalog.cattle.io/namespace: kube-system
+  catalog.cattle.io/os: linux
+  catalog.cattle.io/rancher-version: '>= 2.7.0-0'
+  catalog.cattle.io/release-name: harvester-cloud-provider
+  catalog.cattle.io/ui-component: harvester-cloud-provider
+  catalog.cattle.io/upstream-version: 0.2.12  // updated
+apiVersion: v2
+appVersion: v0.2.6  // as per new chart
+dependencies:
+- condition: kube-vip.enabled
+  name: kube-vip
+  repository: file://./charts/kube-vip
+description: A Helm chart for Harvester Cloud Provider
+keywords:
+- infrastructure
+- harvester
+maintainers:
+- name: harvester
+name: harvester-cloud-provider
+type: application
+version: 0.2.12 // as per new chart
+```
+
+
+Finally, run `make clean && make validate` to validate the changes
+
+
 ### Update 'rancher/rke2` to use new charts as the default value
 
 Point to the new chart version.
 
 https://github.com/rancher/rke2/blob/master/charts/chart_versions.yaml
 
-e.g. https://github.com/rancher/rke2/pull/5980
 
-note: Add PR to each active rke2 branch.
+update `scripts/build-images` with the latest HCP image and kube-vip image, without updating, CI could fail and it affects air-gapped env.
+
+e.g. https://github.com/rancher/rke2/pull/10642
+
+
+:::ntoe
+
+- Add PR to each active rke2 branch.
+
+- Check with RKE2 team to know which k8s version is the oldest active branch.
+
+:::
 
 ## Bump the chart to `Rancher`
 
