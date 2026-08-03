@@ -8,7 +8,7 @@ Set up the dual-stack guest cluster provision on Rancher UI.
 
 ## Optional: Setup KVM if your env is based on it
 
-Enable ipv6 dhcp and nat
+Enable ipv6 dhcp and nat.
 
 virsh net-dumpxml --network default
 
@@ -38,22 +38,28 @@ virsh net-dumpxml --network default
 
 ```
 
-## Rancher UI params
+## Test IPv6 IP offering by DHCP servers
 
-CNI: Select `Canal`, set option `felixIpv6Support: true`
+The VM cloud image like `Ubuntu Jammy` runs `DHCP` to get `IPv4, IPV6` by default.
 
-RKE2-Networking: select `Dual` on `Stack Preference`, input dual cidr to `cluster-cidr` and `service-cidr`.
+Spin a normal `Ubuntu Jammy` VM to test if it could get dual IPs by default.
+
+Keep the `Network Data` empty. (by default)
+![](./resources/test-vm-ipv6-1.png)
+
+![](./resources/test-vm-ipv6-2.png)
+
+VM is up, with IPv4 address reported on Harvester UI.
+![](./resources/test-vm-ipv6-3.png)
+
+Details of dual IPs.
+![](./resources/test-vm-ipv6-4.png)
+
+Above examples shows it works smoothly.
 
 
-```
-      Stack Preference: Dual
 
-      cluster-cidr: 10.42.0.0/16,fd00:42::/48
-      service-cidr: 10.43.0.0/16,fd00:43::/112
-```
-
-![](../resources/gc-dual-stack-networking.png)
-
+Below section is optional to guide the guest VM OS to get dual IPs by default.
 
 User Data: intput to enable v4, v6 dhcp; or set static IPv4, IPv6 addresses.
 
@@ -74,6 +80,41 @@ network:
 ```
 
 ![](../resources/gc-dual-stack-user-data.png)
+
+## Rancher UI params
+
+CNI: Select `Canal`, set option `felixIpv6Support: true`
+
+RKE2-Networking: select `Dual` on `Stack Preference`, input dual cidr to `cluster-cidr` and `service-cidr`.
+
+
+```
+      Stack Preference: Dual
+
+      cluster-cidr: 10.42.0.0/16,fd00:42::/48
+      service-cidr: 10.43.0.0/16,fd00:43::/112
+```
+
+![](../resources/gc-dual-stack-networking.png)
+
+
+Following is another example guest OS VM which gets both IPs on KVM based env.
+
+```bash
+$ uname -a
+Linux gc3-pool1-6cpgv-mcpv6 5.15.0-164-generic #174-Ubuntu SMP Fri Nov 14 20:25:16 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
+
+
+$ ip addr
+2: enp1s0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether fe:23:e9:67:0f:e5 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.122.86/24 metric 100 brd 192.168.122.255 scope global dynamic enp1s0
+       valid_lft 3185sec preferred_lft 3185sec
+    inet6 2001:db8:cafe::15d/128 scope global dynamic noprefixroute    // valid ipv6 addr., offered by above dhcpv6 server which has `start='2001:db8:cafe::100'`
+       valid_lft 85985sec preferred_lft 85985sec
+    inet6 fe80::fc23:e9ff:fe67:fe5/64 scope link                       // ipv6 link local addr., it is not reported
+       valid_lft forever preferred_lft forever
+```
 
 
 Check the the generated `Cluster` object, confirm the lines with `// ensure` are there.
@@ -102,8 +143,7 @@ spec:
             clusterName: gc6
         image:
           pullPolicy: IfNotPresent
-          repository: ttl.sh/hcp                                // note: this is the test HCP iamge, if you cloud-provider-harvester chart version is >=0.2.12, then it has the dual-stack feature
-          tag: 2h
+          tag: v0.2.6                                           // or higher, from v0.2.6, the HCP can report IPs effectively
       rke2-canal:
         calico:
           felixIpv6Support: true                                // ensure
@@ -148,7 +188,7 @@ spec:
 
 ## Ensure the HCP version is `0.2.12` or higher
 
-From harvester-cloud-provider chart version `v0.2.12` or higher, the dual-stack IP reporting is supported.
+From harvester-cloud-provider chart version `v0.2.12` or higher, the dual-stack IP reporting is supported. Specifically, the HCP container image tag `v0.2.6` or higher.
 
 In RKE2, the chart version is: `harvester-cloud-provider-0.2.1200` or higher
 
